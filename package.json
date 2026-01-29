@@ -1,0 +1,18 @@
+{
+    "name": "fnnd-rss-aggregator",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "RSS-based news aggregator",
+    "main": "src/server.js",
+    "scripts": {
+        "start": "node src/server.js",
+        "dev": "node --watch src/server.js",
+        "db:init": "node src/init-db.js"
+    },
+  "dependencies": {
+    "express": "^4.19.2",
+    "iconv-lite": "^0.6.3",
+    "rss-parser": "^3.13.0",
+    "sqlite3": "^5.1.7"
+  }
+}
