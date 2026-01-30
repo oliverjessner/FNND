@@ -554,7 +554,8 @@ toggleLayoutBtn.addEventListener('click', () => {
 });
 runFetchBtn.addEventListener('click', async () => {
     runFetchBtn.disabled = true;
-    runFetchBtn.textContent = 'Läuft…';
+    runFetchBtn.textContent = 'fetching…';
+
     try {
         await apiFetch('/api/fetch/run', { method: 'POST' });
         await loadArticles();
@@ -563,7 +564,7 @@ runFetchBtn.addEventListener('click', async () => {
         alert(`Fetch fehlgeschlagen: ${err.message}`);
     } finally {
         runFetchBtn.disabled = false;
-        runFetchBtn.textContent = 'Fetch starten';
+        runFetchBtn.textContent = 'fetch now';
     }
 });
 
