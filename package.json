@@ -1,6 +1,6 @@
 {
     "name": "no-bullshit-rss",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "type": "module",
     "description": "RSS-based news aggregator",
     "main": "electron/main.cjs",
@@ -10,7 +10,8 @@
         "dev": "node --watch backend/server.js",
         "db:init": "node scripts/init-db.js",
         "postinstall": "echo \"skip\"",
-        "dist:all": "electron-rebuild -f -w @vscode/sqlite3 && electron-builder --mac --win --linux"
+        "dist:all": "electron-rebuild -f -w @vscode/sqlite3 && electron-builder --mac --win --linux",
+        "dist:all:workaround": "PYTHON=/opt/homebrew/opt/python@3.11/bin/python3.11 npm run dist:all"
     },
     "dependencies": {
         "@vscode/sqlite3": "5.1.12-vscode",
