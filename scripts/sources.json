@@ -21,7 +21,7 @@
         "name": "derstandard",
         "url": "https://www.derstandard.at/web",
         "hasFeed": true,
-        "feeds": ["https://www.derstandard.at/rss"]
+        "feeds": ["https://www.derstandard.at/rss/web"]
     },
     {
         "name": "sueddeutsche-wirtschaft",
@@ -47,12 +47,7 @@
         "hasFeed": true,
         "feeds": ["https://www.absatzwirtschaft.de/feed"]
     },
-    {
-        "name": "kickstarter",
-        "url": "https://www.kickstarter.com/discover/categories/technology",
-        "hasFeed": false,
-        "feeds": []
-    },
+
     {
         "name": "404media",
         "url": "https://www.404media.co/",
