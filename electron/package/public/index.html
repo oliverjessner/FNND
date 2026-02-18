@@ -51,36 +51,42 @@
             </section>
 
             <section id="view-settings" class="view view-settings">
-                <div class="settings-tabs">
-                    <button class="settings-tab is-active" data-settings="feeds" type="button">Feeds</button>
-                    <button class="settings-tab" data-settings="lists" type="button">Lists</button>
+                <div class="settings-tabs-wrap">
+                    <div class="settings-tabs">
+                        <button class="settings-tab is-active" data-settings="feeds" type="button">Feeds</button>
+                        <button class="settings-tab" data-settings="lists" type="button">Lists</button>
+                    </div>
                 </div>
 
                 <div id="settings-feeds" class="settings-panel is-active">
-                    <form id="feed-form" class="card form">
-                        <div class="form-row">
-                            <label>Name</label>
-                            <input type="text" id="feed-name" placeholder="z. B. techcrunch" required />
-                        </div>
-                        <div class="form-row">
-                            <label>Website URL</label>
-                            <input type="url" id="feed-website" placeholder="https://example.com" required />
-                        </div>
-                        <div class="form-row">
-                            <label>Feed URL</label>
-                            <input type="url" id="feed-url" placeholder="https://example.com/feed.xml" required />
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn primary" id="feed-submit">store feed</button>
-                            <button type="button" class="btn ghost" id="feed-cancel">cancel</button>
-                            <button type="button" class="btn" id="feed-test">test feed</button>
-                        </div>
-                        <div id="feed-form-status" class="form-status"></div>
-                    </form>
+                    <div class="settings-feeds-left">
+                        <form id="feed-form" class="card form">
+                            <div class="form-row">
+                                <label>Name</label>
+                                <input type="text" id="feed-name" placeholder="z. B. techcrunch" required />
+                            </div>
+                            <div class="form-row">
+                                <label>Website URL</label>
+                                <input type="url" id="feed-website" placeholder="https://example.com" required />
+                            </div>
+                            <div class="form-row">
+                                <label>Feed URL</label>
+                                <input type="url" id="feed-url" placeholder="https://example.com/feed.xml" required />
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn primary" id="feed-submit">store feed</button>
+                                <button type="button" class="btn ghost" id="feed-cancel">cancel</button>
+                                <button type="button" class="btn" id="feed-test">test feed</button>
+                            </div>
+                            <div id="feed-form-status" class="form-status"></div>
+                        </form>
+                        <div id="fetch-status" class="status-line">Letzter Fetch: —</div>
+                    </div>
 
-                    <div id="fetch-status" class="status-line">Letzter Fetch: —</div>
-                    <div id="feeds-state" class="state">Lädt…</div>
-                    <div id="feeds-list" class="list"></div>
+                    <div class="settings-feeds-content">
+                        <div id="feeds-state" class="state">Lädt…</div>
+                        <div id="feeds-list" class="list"></div>
+                    </div>
                 </div>
 
                 <div id="settings-lists" class="settings-panel">
@@ -129,7 +135,7 @@
                     <p class="teaser"></p>
                 </div>
                 <div class="actions">
-                    <a class="link" target="_blank" rel="noopener noreferrer">Zum Artikel</a>
+                    <a class="link" target="_blank" rel="noopener noreferrer">read article</a>
                     <button class="btn ghost btn-add" type="button">+</button>
                 </div>
             </article>

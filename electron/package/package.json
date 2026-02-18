@@ -1,6 +1,6 @@
 {
     "name": "no-bullshit-rss",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "type": "module",
     "description": "RSS-based news aggregator",
     "main": "electron/main.cjs",

@@ -1,6 +1,6 @@
 {
     "name": "no-bullshit-rss",
-    "version": "0.0.3",
+    "version": "0.1.0",
     "type": "module",
     "description": "RSS-based news aggregator",
     "main": "electron/main.cjs",
@@ -11,7 +11,7 @@
         "db:init": "node scripts/init-db.js",
         "postinstall": "echo \"skip\"",
         "dist:all": "electron-rebuild -f -w @vscode/sqlite3 && electron-builder --mac --win --linux",
-        "dist:all:workaround": "PYTHON=/opt/homebrew/opt/python@3.11/bin/python3.11 npm run dist:all"
+        "dist:all:workaround": "PYTHON=/opt/homebrew/opt/python@3.11/bin/python3.11 CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:all"
     },
     "dependencies": {
         "@vscode/sqlite3": "5.1.12-vscode",
@@ -29,6 +29,7 @@
             "output": "electron/dist",
             "buildResources": "electron/build"
         },
+        "afterPack": "scripts/afterPack-adhoc-sign.cjs",
         "appId": "com.oliverjessner.no-bullshit-rss",
         "productName": "NO BULLSHIT RSS",
         "files": [

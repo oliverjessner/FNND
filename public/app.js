@@ -7,6 +7,7 @@ const views = document.querySelectorAll('.view');
 const navLinks = document.querySelectorAll('.nav-link');
 const articlesState = document.getElementById('articles-state');
 const articlesList = document.getElementById('articles-list');
+const articlesScroll = document.querySelector('.articles-scroll');
 const feedsState = document.getElementById('feeds-state');
 const feedsList = document.getElementById('feeds-list');
 const filterList = document.getElementById('filter-list');
@@ -36,6 +37,7 @@ const listsState = document.getElementById('lists-state');
 const listsList = document.getElementById('lists-list');
 const settingsTabs = document.querySelectorAll('.settings-tab');
 const settingsPanels = document.querySelectorAll('.settings-panel');
+const settingsTabsWrap = document.querySelector('.settings-tabs-wrap');
 const modalBackdrop = document.getElementById('modal-backdrop');
 const modalListSelect = document.getElementById('modal-list-select');
 const modalClose = document.getElementById('modal-close');
@@ -58,6 +60,7 @@ function setView(name) {
     navLinks.forEach(link => {
         link.classList.toggle('is-active', link.dataset.view === name);
     });
+    updateSettingsTabsScrollState();
 }
 
 navLinks.forEach(link => {
@@ -84,6 +87,20 @@ function applyLayoutState() {
     if (label) {
         label.textContent = isListLayout ? 'Liste' : 'Cards';
     }
+}
+
+function getPageScrollTop() {
+    return window.scrollY || document.documentElement.scrollTop || 0;
+}
+
+function updateSettingsTabsScrollState() {
+    if (!settingsTabsWrap) {
+        return;
+    }
+    const settingsView = document.getElementById('view-settings');
+    const isSettingsVisible = settingsView?.classList.contains('is-active');
+    const isScrolled = getPageScrollTop() > 2;
+    settingsTabsWrap.classList.toggle('is-scrolled', Boolean(isSettingsVisible && isScrolled));
 }
 
 function formatDate(value) {
@@ -424,6 +441,37 @@ async function loadArticles() {
     }
 }
 
+function normalizeSearchQuery(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 300);
+}
+
+function scrollArticlesToTop() {
+    if (articlesScroll) {
+        articlesScroll.scrollTop = 0;
+    }
+    window.scrollTo(0, 0);
+}
+
+async function searchFromSelection(value) {
+    const query = normalizeSearchQuery(value);
+    if (!query) {
+        return;
+    }
+
+    if (searchTimer) {
+        clearTimeout(searchTimer);
+        searchTimer = null;
+    }
+
+    searchInput.value = query;
+    setView('main');
+    scrollArticlesToTop();
+    await loadArticles();
+}
+
 function resetForm() {
     state.editingId = null;
     feedName.value = '';
@@ -588,8 +636,13 @@ searchInput.addEventListener('input', () => {
     }, 3000);
 });
 
+window.__nbsSearchSelection = value => {
+    searchFromSelection(value);
+};
+
 async function boot() {
     applyLayoutState();
+    updateSettingsTabsScrollState();
     await loadFeeds();
     await loadLists();
     await loadArticles();
@@ -598,6 +651,8 @@ async function boot() {
 }
 
 boot();
+
+window.addEventListener('scroll', updateSettingsTabsScrollState, { passive: true });
 
 function setupSse() {
     if (sse) {

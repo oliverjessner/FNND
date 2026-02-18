@@ -11,6 +11,11 @@
     --padding-right-left: 8vw;
 }
 
+html {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -45,8 +50,11 @@ body {
 }
 
 .brand-logo {
-    height: auto;
-    width: auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    object-fit: contain;
+    flex-shrink: 0;
     display: block;
 }
 
@@ -464,6 +472,27 @@ select {
     flex-wrap: wrap;
 }
 
+.settings-tabs-wrap {
+    position: sticky;
+    top: 70px;
+    z-index: 8;
+    margin: -1px calc(-1 * var(--padding-right-left)) 20px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding-left: var(--padding-right-left);
+    padding-right: var(--padding-right-left);
+    transition: background-color 0.18s ease, backdrop-filter 0.18s ease;
+}
+
+.settings-tabs-wrap.is-scrolled {
+    background: rgba(247, 248, 250, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
 .settings-tabs {
     display: inline-flex;
     gap: 10px;
@@ -471,7 +500,6 @@ select {
     border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--surface);
-    margin-bottom: 20px;
 }
 
 .settings-tab {
@@ -496,6 +524,40 @@ select {
 
 .settings-panel.is-active {
     display: block;
+}
+
+#settings-feeds.is-active {
+    display: grid;
+    grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+#settings-feeds .form {
+    margin-bottom: 0;
+}
+
+.settings-feeds-left {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.settings-feeds-content {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.settings-feeds-left .status-line {
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
 }
 
 .btn {
@@ -613,5 +675,11 @@ select {
     .select {
         flex: 1;
         width: 100%;
+    }
+}
+
+@media (max-width: 1024px) {
+    #settings-feeds.is-active {
+        grid-template-columns: 1fr;
     }
 }

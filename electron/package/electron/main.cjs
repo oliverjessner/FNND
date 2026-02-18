@@ -64,8 +64,87 @@ function startServer() {
   });
 }
 
+function normalizeSelectionText(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 300);
+}
+
+function pushSeparator(template) {
+  if (template.length === 0) {
+    return;
+  }
+  const lastItem = template[template.length - 1];
+  if (lastItem.type !== 'separator') {
+    template.push({ type: 'separator' });
+  }
+}
+
+function buildContextMenuTemplate(win, params) {
+  const template = [];
+  const selectedText = normalizeSelectionText(params.selectionText);
+
+  if (selectedText && !params.isEditable) {
+    template.push({
+      label: 'Nach markiertem Text suchen',
+      click: () => {
+        const serializedText = JSON.stringify(selectedText);
+        win.webContents
+          .executeJavaScript(
+            `if (typeof window.__nbsSearchSelection === 'function') { window.__nbsSearchSelection(${serializedText}); }`,
+            true
+          )
+          .catch(() => {});
+      }
+    });
+    pushSeparator(template);
+  }
+
+  if (params.isEditable) {
+    if (params.editFlags.canUndo) {
+      template.push({ role: 'undo' });
+    }
+    if (params.editFlags.canRedo) {
+      template.push({ role: 'redo' });
+    }
+    if (params.editFlags.canUndo || params.editFlags.canRedo) {
+      pushSeparator(template);
+    }
+
+    if (params.editFlags.canCut) {
+      template.push({ role: 'cut' });
+    }
+    if (params.editFlags.canCopy) {
+      template.push({ role: 'copy' });
+    }
+    if (params.editFlags.canPaste) {
+      template.push({ role: 'paste' });
+    }
+    if (params.editFlags.canSelectAll) {
+      template.push({ role: 'selectAll' });
+    }
+  } else if (selectedText) {
+    template.push({ role: 'copy' });
+  }
+
+  if (params.linkURL && /^https?:/i.test(params.linkURL)) {
+    pushSeparator(template);
+    template.push({
+      label: 'Link im Browser oeffnen',
+      click: () => shell.openExternal(params.linkURL)
+    });
+  }
+
+  if (template[template.length - 1]?.type === 'separator') {
+    template.pop();
+  }
+
+  return template;
+}
+
 async function createWindow() {
-  const iconPath = path.join(__dirname, '..', 'public', 'images', 'logo', 'logo_raw.png');
+  const iconPath = path.join(__dirname, '..', 'public', 'images', 'logo', 'logo_app.png');
   const appIcon = nativeImage.createFromPath(iconPath);
 
   const win = new BrowserWindow({
@@ -100,6 +179,14 @@ async function createWindow() {
       event.preventDefault();
       shell.openExternal(url);
     }
+  });
+
+  win.webContents.on('context-menu', (event, params) => {
+    const template = buildContextMenuTemplate(win, params);
+    if (template.length === 0) {
+      return;
+    }
+    Menu.buildFromTemplate(template).popup({ window: win });
   });
 
   await waitForServer(PORT);
