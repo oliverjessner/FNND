@@ -8,14 +8,23 @@ const navLinks = document.querySelectorAll('.nav-link');
 const articlesState = document.getElementById('articles-state');
 const articlesList = document.getElementById('articles-list');
 const articlesScroll = document.querySelector('.articles-scroll');
+const digestState = document.getElementById('digest-state');
+const digestList = document.getElementById('digest-list');
+const digestTitle = document.getElementById('digest-title');
+const digestSubtitle = document.getElementById('digest-subtitle');
+const digestMarkAllBtn = document.getElementById('digest-mark-all');
+const digestSortToggle = document.getElementById('digest-sort-toggle');
+const digestSortOptions = document.querySelectorAll('.digest-sort-option');
+const digestTemplate = document.getElementById('digest-cluster-template');
+const digestHeader = document.querySelector('.digest-header');
 const feedsState = document.getElementById('feeds-state');
 const feedsList = document.getElementById('feeds-list');
 const filterList = document.getElementById('filter-list');
 const filterSource = document.getElementById('filter-source');
-const refreshArticlesBtn = document.getElementById('refresh-articles');
 const runFetchBtn = document.getElementById('run-fetch');
 const toggleLayoutBtn = document.getElementById('toggle-layout');
 const fetchStatus = document.getElementById('fetch-status');
+const articleCountStatus = document.getElementById('article-count-status');
 const searchInput = document.getElementById('search-input');
 const loadingRow = document.getElementById('loading-row');
 const feedForm = document.getElementById('feed-form');
@@ -45,6 +54,7 @@ const modalCancel = document.getElementById('modal-cancel');
 const modalConfirm = document.getElementById('modal-confirm');
 const modalExistingLists = document.getElementById('modal-existing-lists');
 const LAYOUT_KEY = 'fnnd.layout';
+const DIGEST_SORT_KEY = 'fnnd.digestSort';
 
 let loadingStartedAt = 0;
 let isListLayout = localStorage.getItem(LAYOUT_KEY) === 'list';
@@ -52,6 +62,192 @@ let searchTimer = null;
 let listEditingId = null;
 let pendingArticleId = null;
 let sse = null;
+let digestSortDirection = localStorage.getItem(DIGEST_SORT_KEY) === 'asc' ? 'asc' : 'desc';
+let lastDigestPayload = null;
+let digestNeedsRefresh = true;
+let digestLoadPromise = null;
+let lastDigestRenderFingerprint = '';
+let articlesNeedsRefresh = true;
+let pendingDigestMutationEventsToSkip = 0;
+
+function updateDigestSortUi() {
+    if (!digestSortOptions || digestSortOptions.length === 0) {
+        return;
+    }
+    digestSortOptions.forEach(option => {
+        const isActive = option.dataset.digestSort === digestSortDirection;
+        option.classList.toggle('is-active', isActive);
+        option.setAttribute('aria-pressed', String(isActive));
+    });
+}
+
+function getDigestClusterSortTime(cluster) {
+    const representative = cluster?.representative || cluster?.items?.[0];
+    const publishedAt = representative?.publishedAt;
+    const timestamp = publishedAt ? new Date(publishedAt).getTime() : 0;
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortDigestClusters(clusters) {
+    return [...clusters].sort((left, right) => {
+        const leftCount = Number(left?.clusterCount || 0);
+        const rightCount = Number(right?.clusterCount || 0);
+        const countDiff = digestSortDirection === 'asc' ? leftCount - rightCount : rightCount - leftCount;
+        if (countDiff !== 0) {
+            return countDiff;
+        }
+
+        const leftTime = getDigestClusterSortTime(left);
+        const rightTime = getDigestClusterSortTime(right);
+        return rightTime - leftTime;
+    });
+}
+
+function getDigestArticleIds(payload) {
+    if (!payload || !Array.isArray(payload.clusters)) {
+        return [];
+    }
+
+    const ids = new Set();
+    payload.clusters.forEach(cluster => {
+        const items = Array.isArray(cluster?.items) ? cluster.items : [];
+        items.forEach(item => {
+            const id = Number(item?.id);
+            if (Number.isInteger(id) && id > 0) {
+                ids.add(id);
+            }
+        });
+    });
+    return Array.from(ids);
+}
+
+function updateDigestMarkAllButton(payload = lastDigestPayload) {
+    if (!digestMarkAllBtn) {
+        return;
+    }
+
+    const articleIds = getDigestArticleIds(payload);
+    const total = articleIds.length;
+    digestMarkAllBtn.disabled = total === 0;
+    digestMarkAllBtn.textContent = total > 0 ? `Mark all as digested (${total})` : 'Mark all as digested';
+}
+
+function getNormalizedArticleIds(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const ids = new Set();
+    value.forEach(id => {
+        const normalized = Number(id);
+        if (Number.isInteger(normalized) && normalized > 0) {
+            ids.add(normalized);
+        }
+    });
+    return Array.from(ids);
+}
+
+function getDigestClusterArticleIds(cluster) {
+    if (!cluster || !Array.isArray(cluster.items)) {
+        return [];
+    }
+    return getNormalizedArticleIds(cluster.items.map(item => item?.id));
+}
+
+function removeClusterFromDigestPayloadByArticleIds(articleIds) {
+    const normalizedIds = getNormalizedArticleIds(articleIds);
+    if (!lastDigestPayload || !Array.isArray(lastDigestPayload.clusters) || normalizedIds.length === 0) {
+        return false;
+    }
+
+    const ids = new Set(normalizedIds);
+    const nextClusters = lastDigestPayload.clusters.filter(cluster => {
+        const items = Array.isArray(cluster?.items) ? cluster.items : [];
+        return !items.some(item => ids.has(Number(item?.id)));
+    });
+
+    if (nextClusters.length === lastDigestPayload.clusters.length) {
+        return false;
+    }
+
+    const totalArticles = nextClusters.reduce((sum, cluster) => {
+        const items = Array.isArray(cluster?.items) ? cluster.items : [];
+        return sum + items.length;
+    }, 0);
+
+    lastDigestPayload = {
+        ...lastDigestPayload,
+        clusters: nextClusters,
+        totalClusters: nextClusters.length,
+        totalArticles,
+    };
+    lastDigestRenderFingerprint = getDigestPayloadFingerprint(lastDigestPayload);
+    digestNeedsRefresh = false;
+
+    return true;
+}
+
+function applyDigestLocalMutationUi() {
+    if (!digestList || !digestState) {
+        return;
+    }
+    const clusterElements = digestList.querySelectorAll('.digest-cluster');
+    if (clusterElements.length === 0) {
+        digestState.textContent = 'Für heute sind noch keine Artikel gespeichert.';
+        digestState.style.display = 'block';
+    } else {
+        digestState.style.display = 'none';
+    }
+    renderDigestSubtitle(lastDigestPayload);
+    updateDigestMarkAllButton(lastDigestPayload);
+}
+
+async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'Digest topic', options = {}) {
+    const ids = getNormalizedArticleIds(articleIds);
+    if (ids.length === 0) {
+        return false;
+    }
+    const { refresh = true, skipNextDigestEvent = false } = options;
+
+    const previousLabel = triggerBtn ? triggerBtn.textContent : '';
+    if (triggerBtn) {
+        triggerBtn.disabled = true;
+        triggerBtn.textContent = 'Digesting…';
+    }
+    if (skipNextDigestEvent) {
+        pendingDigestMutationEventsToSkip += 1;
+    }
+
+    try {
+        await apiFetch('/api/articles/daily-digest/mark-all-digested', {
+            method: 'POST',
+            body: JSON.stringify({ articleIds: ids }),
+        });
+        if (refresh) {
+            digestNeedsRefresh = true;
+            await loadDailyDigest({ force: true });
+        }
+        return true;
+    } catch (err) {
+        if (skipNextDigestEvent && pendingDigestMutationEventsToSkip > 0) {
+            pendingDigestMutationEventsToSkip -= 1;
+        }
+        if (triggerBtn) {
+            triggerBtn.disabled = false;
+            triggerBtn.textContent = previousLabel || triggerLabel;
+        }
+        alert(`Digested fehlgeschlagen: ${err.message}`);
+        return false;
+    }
+}
+
+async function markAllVisibleAsDigested() {
+    if (!digestMarkAllBtn) {
+        return;
+    }
+    const articleIds = getDigestArticleIds(lastDigestPayload);
+    await markDigestArticlesByIds(articleIds, digestMarkAllBtn, 'Mark all as digested');
+    updateDigestMarkAllButton(lastDigestPayload);
+}
 
 function setView(name) {
     views.forEach(view => {
@@ -60,7 +256,14 @@ function setView(name) {
     navLinks.forEach(link => {
         link.classList.toggle('is-active', link.dataset.view === name);
     });
-    updateSettingsTabsScrollState();
+    scrollArticlesToTop();
+    updateStickySubnavScrollState();
+    if (name === 'main' && articlesNeedsRefresh) {
+        loadArticles();
+    }
+    if (name === 'digest') {
+        loadDailyDigest();
+    }
 }
 
 navLinks.forEach(link => {
@@ -93,14 +296,20 @@ function getPageScrollTop() {
     return window.scrollY || document.documentElement.scrollTop || 0;
 }
 
-function updateSettingsTabsScrollState() {
-    if (!settingsTabsWrap) {
-        return;
-    }
-    const settingsView = document.getElementById('view-settings');
-    const isSettingsVisible = settingsView?.classList.contains('is-active');
+function updateStickySubnavScrollState() {
     const isScrolled = getPageScrollTop() > 2;
-    settingsTabsWrap.classList.toggle('is-scrolled', Boolean(isSettingsVisible && isScrolled));
+
+    if (settingsTabsWrap) {
+        const settingsView = document.getElementById('view-settings');
+        const isSettingsVisible = settingsView?.classList.contains('is-active');
+        settingsTabsWrap.classList.toggle('is-scrolled', Boolean(isSettingsVisible && isScrolled));
+    }
+
+    if (digestHeader) {
+        const digestView = document.getElementById('view-digest');
+        const isDigestVisible = digestView?.classList.contains('is-active');
+        digestHeader.classList.toggle('is-scrolled', Boolean(isDigestVisible && isScrolled));
+    }
 }
 
 function formatDate(value) {
@@ -115,13 +324,25 @@ async function loadFetchStatus() {
         const status = await apiFetch('/api/fetch/status');
         if (!status || !status.at) {
             fetchStatus.textContent = 'Letzter Fetch: —';
-            return;
+        } else {
+            const date = formatDate(status.at);
+            const suffix = status.error ? ` (Fehler: ${status.error})` : ` (${status.totalNew} neu)`;
+            fetchStatus.textContent = `Letzter Fetch: ${date}${suffix}`;
         }
-        const date = formatDate(status.at);
-        const suffix = status.error ? ` (Fehler: ${status.error})` : ` (${status.totalNew} neu)`;
-        fetchStatus.textContent = `Letzter Fetch: ${date}${suffix}`;
     } catch {
         fetchStatus.textContent = 'Letzter Fetch: —';
+    }
+
+    if (!articleCountStatus) {
+        return;
+    }
+
+    try {
+        const stats = await apiFetch('/api/articles/stats');
+        const total = Number(stats?.total || 0);
+        articleCountStatus.textContent = `Gespeicherte Artikel: ${total.toLocaleString('de-DE')}`;
+    } catch {
+        articleCountStatus.textContent = 'Gespeicherte Artikel: —';
     }
 }
 
@@ -343,6 +564,50 @@ function renderListFilterOptions() {
     filterList.value = selected;
 }
 
+function findFeedIdBySourceName(sourceName) {
+    const normalizedSourceName = String(sourceName || '')
+        .trim()
+        .toLowerCase();
+    if (!normalizedSourceName) {
+        return '';
+    }
+
+    const matchedFeed = state.feeds.find(feed => {
+        const normalizedFeedName = String(feed?.name || '')
+            .trim()
+            .toLowerCase();
+        return normalizedFeedName === normalizedSourceName;
+    });
+
+    return matchedFeed ? String(matchedFeed.id) : '';
+}
+
+async function openDashboardWithSourceFilter({ feedId, sourceName } = {}) {
+    const numericFeedId = Number(feedId);
+    let resolvedFeedId = Number.isInteger(numericFeedId) && numericFeedId > 0 ? String(numericFeedId) : '';
+
+    if (!resolvedFeedId) {
+        resolvedFeedId = findFeedIdBySourceName(sourceName);
+    }
+
+    if (!resolvedFeedId) {
+        return;
+    }
+
+    let optionExists = Array.from(filterSource.options).some(option => option.value === resolvedFeedId);
+    if (!optionExists) {
+        await loadFeeds();
+        optionExists = Array.from(filterSource.options).some(option => option.value === resolvedFeedId);
+        if (!optionExists) {
+            return;
+        }
+    }
+
+    filterSource.value = resolvedFeedId;
+    setView('main');
+    await loadArticles();
+}
+
 async function loadFeeds() {
     feedsState.style.display = 'block';
     feedsState.textContent = 'Lädt…';
@@ -406,6 +671,339 @@ function renderArticles(articles) {
     });
 }
 
+function renderDigestClusters(payload) {
+    if (!digestList || !digestState || !digestTemplate) {
+        return;
+    }
+
+    const clusters = sortDigestClusters(Array.isArray(payload?.clusters) ? payload.clusters : []);
+    digestList.innerHTML = '';
+
+    if (clusters.length === 0) {
+        digestState.textContent = 'Für heute sind noch keine Artikel gespeichert.';
+        digestState.style.display = 'block';
+        return;
+    }
+
+    digestState.style.display = 'none';
+
+    clusters.forEach(cluster => {
+        const representative = cluster.representative || cluster.items?.[0] || {};
+        const items = Array.isArray(cluster.items) ? cluster.items : [];
+        const node = digestTemplate.content.cloneNode(true);
+        const countEl = node.querySelector('.digest-cluster-count');
+        const dateEl = node.querySelector('.digest-cluster-date');
+        const titleEl = node.querySelector('.digest-cluster-title');
+        const sourcesEl = node.querySelector('.digest-cluster-sources');
+        const itemsGridEl = node.querySelector('.digest-items-grid');
+
+        if (countEl) {
+            countEl.textContent =
+                cluster.clusterCount > 1 ? `${cluster.clusterCount} ähnliche Artikel` : '1 Artikel';
+        }
+        if (dateEl) {
+            dateEl.textContent = formatDate(representative.publishedAt);
+        }
+        if (titleEl) {
+            titleEl.textContent = cluster.clusterTitle || representative.title || 'Ohne Titel';
+        }
+        if (sourcesEl) {
+            sourcesEl.innerHTML = '';
+            const sourcesMap = new Map();
+            items.forEach(item => {
+                const key = String(item.sourceName || 'Unbekannte Quelle');
+                if (!sourcesMap.has(key)) {
+                    const itemFeedId = Number(item.feedId);
+                    sourcesMap.set(key, {
+                        name: key,
+                        logo: item.sourceLogoDataUrl || null,
+                        feedId: Number.isInteger(itemFeedId) && itemFeedId > 0 ? itemFeedId : null,
+                    });
+                }
+            });
+            const sources = Array.from(sourcesMap.values());
+
+            sourcesEl.classList.toggle('is-single-source', sources.length === 1);
+
+            if (sources.length === 0) {
+                const empty = document.createElement('span');
+                empty.className = 'digest-source-chip';
+                empty.textContent = 'Unbekannte Quelle';
+                sourcesEl.appendChild(empty);
+            } else {
+                sources.forEach(source => {
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'digest-source-chip';
+                    if (source.feedId) {
+                        chip.classList.add('is-clickable');
+                        chip.title = `Filter by ${source.name}`;
+                        chip.addEventListener('click', async event => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            await openDashboardWithSourceFilter({
+                                feedId: source.feedId,
+                                sourceName: source.name,
+                            });
+                        });
+                    } else {
+                        chip.disabled = true;
+                    }
+
+                    if (source.logo) {
+                        const logo = document.createElement('img');
+                        logo.className = 'digest-source-logo';
+                        logo.src = source.logo;
+                        logo.alt = '';
+                        chip.appendChild(logo);
+                    }
+
+                    const text = document.createElement('span');
+                    text.className = 'digest-source-name';
+                    text.textContent = source.name;
+                    chip.appendChild(text);
+                    sourcesEl.appendChild(chip);
+                });
+            }
+        }
+        if (itemsGridEl) {
+            const clusterArticleIds = getDigestClusterArticleIds(cluster);
+            itemsGridEl.innerHTML = '';
+            itemsGridEl.classList.toggle('is-single-item', items.length === 1);
+            items.forEach(item => {
+                const card = document.createElement('article');
+                const hasUrl = Boolean(item.url);
+                card.className = hasUrl ? 'digest-item-card digest-item-card-link' : 'digest-item-card';
+
+                if (hasUrl) {
+                    const openArticle = () => {
+                        window.open(item.url, '_blank', 'noopener,noreferrer');
+                    };
+                    card.setAttribute('role', 'link');
+                    card.tabIndex = 0;
+                    card.addEventListener('click', event => {
+                        if (event.target.closest('.digest-item-actions')) {
+                            return;
+                        }
+                        openArticle();
+                    });
+                    card.addEventListener('keydown', event => {
+                        if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('.digest-item-actions')) {
+                            event.preventDefault();
+                            openArticle();
+                        }
+                    });
+                }
+
+                const meta = document.createElement('div');
+                meta.className = 'digest-item-card-meta';
+
+                const sourceWrap = document.createElement('span');
+                sourceWrap.className = 'digest-item-source-wrap';
+
+                if (item.sourceLogoDataUrl) {
+                    const sourceLogo = document.createElement('img');
+                    sourceLogo.className = 'digest-item-source-logo';
+                    sourceLogo.src = item.sourceLogoDataUrl;
+                    sourceLogo.alt = '';
+                    sourceWrap.appendChild(sourceLogo);
+                }
+
+                const source = document.createElement('span');
+                source.className = 'digest-item-source';
+                source.textContent = item.sourceName || '—';
+                sourceWrap.appendChild(source);
+
+                const published = document.createElement('span');
+                published.className = 'digest-item-date';
+                published.textContent = formatDate(item.publishedAt);
+
+                meta.appendChild(sourceWrap);
+                meta.appendChild(published);
+
+                const itemTitle = document.createElement('h4');
+                itemTitle.className = 'digest-item-title';
+                itemTitle.textContent = item.title || 'Ohne Titel';
+
+                card.appendChild(meta);
+                card.appendChild(itemTitle);
+                if (item.teaser) {
+                    const itemTeaser = document.createElement('p');
+                    itemTeaser.className = 'digest-item-teaser';
+                    itemTeaser.textContent = item.teaser;
+                    card.appendChild(itemTeaser);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'digest-item-actions';
+
+                if (hasUrl) {
+                    const readLink = document.createElement('a');
+                    readLink.className = 'digest-item-read-link digest-item-action';
+                    readLink.href = item.url;
+                    readLink.target = '_blank';
+                    readLink.rel = 'noopener noreferrer';
+                    readLink.textContent = 'read article';
+                    actions.appendChild(readLink);
+                }
+
+                if (actions.childElementCount > 0) {
+                    card.appendChild(actions);
+                }
+                itemsGridEl.appendChild(card);
+            });
+
+            const clusterCard = node.querySelector('.digest-cluster');
+            if (clusterCard) {
+                const clusterActions = document.createElement('div');
+                clusterActions.className = 'digest-cluster-actions';
+
+                const clusterDigestBtn = document.createElement('button');
+                clusterDigestBtn.type = 'button';
+                clusterDigestBtn.className = 'btn ghost digest-cluster-digest-btn';
+                clusterDigestBtn.textContent =
+                    clusterArticleIds.length > 1 ? `Digest topic (${clusterArticleIds.length})` : 'Digest topic';
+                clusterDigestBtn.disabled = clusterArticleIds.length === 0;
+
+                if (!clusterDigestBtn.disabled) {
+                    clusterDigestBtn.addEventListener('click', async event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const ok = await markDigestArticlesByIds(clusterArticleIds, clusterDigestBtn, 'Digest topic', {
+                            refresh: false,
+                            skipNextDigestEvent: true,
+                        });
+                        if (!ok) {
+                            return;
+                        }
+                        const removed = removeClusterFromDigestPayloadByArticleIds(clusterArticleIds);
+                        if (removed && clusterCard.isConnected) {
+                            clusterCard.remove();
+                            applyDigestLocalMutationUi();
+                        }
+                    });
+                }
+
+                clusterActions.appendChild(clusterDigestBtn);
+                clusterCard.appendChild(clusterActions);
+            }
+        }
+
+        digestList.appendChild(node);
+    });
+}
+
+function renderDigestSubtitle(payload) {
+    if (!digestSubtitle && !digestTitle) {
+        return;
+    }
+
+    const totalArticles = Number(payload?.totalArticles || 0);
+    const totalClusters = Number(payload?.totalClusters || 0);
+    const startDate = payload?.startIso ? new Date(payload.startIso) : new Date();
+    const dayLabel = Number.isNaN(startDate.getTime())
+        ? new Date().toLocaleDateString('de-DE', { dateStyle: 'full' })
+        : startDate.toLocaleDateString('de-DE', { dateStyle: 'full' });
+
+    if (digestTitle) {
+        digestTitle.textContent = dayLabel;
+    }
+    if (digestSubtitle) {
+        digestSubtitle.textContent = `${totalArticles.toLocaleString('de-DE')} Artikel · ${totalClusters.toLocaleString('de-DE')} Cluster`;
+    }
+}
+
+function isViewActive(name) {
+    const view = document.getElementById(`view-${name}`);
+    return Boolean(view?.classList.contains('is-active'));
+}
+
+function getDigestPayloadFingerprint(payload) {
+    if (!payload || !Array.isArray(payload.clusters)) {
+        return '';
+    }
+
+    const clusterFingerprint = payload.clusters
+        .map(cluster => {
+            const representativeId = Number(cluster?.representative?.id || 0);
+            const clusterCount = Number(cluster?.clusterCount || 0);
+            const representativeDate = cluster?.representative?.publishedAt || '';
+            return `${representativeId}:${clusterCount}:${representativeDate}`;
+        })
+        .join('|');
+
+    return [
+        payload.startIso || '',
+        payload.endIso || '',
+        Number(payload.totalArticles || 0),
+        Number(payload.totalClusters || 0),
+        clusterFingerprint,
+    ].join('::');
+}
+
+function requestDigestRefresh({ force = false } = {}) {
+    digestNeedsRefresh = true;
+    if (isViewActive('digest')) {
+        void loadDailyDigest({ force, silent: true });
+    }
+}
+
+async function loadDailyDigest({ force = false, silent = false } = {}) {
+    if (!digestState || !digestList) {
+        return;
+    }
+
+    if (!force && !digestNeedsRefresh && lastDigestPayload) {
+        return;
+    }
+
+    if (digestLoadPromise) {
+        return digestLoadPromise;
+    }
+
+    const showLoadingState = !silent || !lastDigestPayload;
+    if (showLoadingState) {
+        digestList.innerHTML = '';
+        digestState.textContent = 'Lädt…';
+        digestState.style.display = 'block';
+        updateDigestMarkAllButton({ clusters: [] });
+    }
+
+    digestLoadPromise = (async () => {
+        try {
+            const payload = await apiFetch('/api/articles/daily-digest');
+            const nextFingerprint = getDigestPayloadFingerprint(payload);
+            const hasDigestChanged = nextFingerprint !== lastDigestRenderFingerprint;
+
+            lastDigestPayload = payload;
+            digestNeedsRefresh = false;
+            renderDigestSubtitle(payload);
+
+            if (hasDigestChanged || showLoadingState || force) {
+                renderDigestClusters(payload);
+                lastDigestRenderFingerprint = nextFingerprint;
+            }
+
+            updateDigestMarkAllButton(payload);
+        } catch (err) {
+            if (!lastDigestPayload) {
+                lastDigestPayload = null;
+                lastDigestRenderFingerprint = '';
+                digestState.textContent = `Fehler: ${err.message}`;
+                digestState.style.display = 'block';
+                updateDigestMarkAllButton({ clusters: [] });
+            }
+            if (digestSubtitle) {
+                digestSubtitle.textContent = 'Daily Digest konnte nicht geladen werden.';
+            }
+        } finally {
+            digestLoadPromise = null;
+        }
+    })();
+
+    return digestLoadPromise;
+}
+
 async function loadArticles() {
     const params = new URLSearchParams();
     const selectedList = filterList.value;
@@ -435,9 +1033,11 @@ async function loadArticles() {
 
         loadingRow.style.display = 'none';
         renderArticles(articles);
+        articlesNeedsRefresh = false;
     } catch (err) {
         articlesState.textContent = `Fehler: ${err.message}`;
         articlesState.style.display = 'block';
+        articlesNeedsRefresh = true;
     }
 }
 
@@ -468,7 +1068,6 @@ async function searchFromSelection(value) {
 
     searchInput.value = query;
     setView('main');
-    scrollArticlesToTop();
     await loadArticles();
 }
 
@@ -598,7 +1197,6 @@ feedTest.addEventListener('click', async () => {
 
 filterSource.addEventListener('change', () => loadArticles());
 filterList.addEventListener('change', () => loadArticles());
-refreshArticlesBtn.addEventListener('click', () => loadArticles());
 toggleLayoutBtn.addEventListener('click', () => {
     isListLayout = !isListLayout;
     localStorage.setItem(LAYOUT_KEY, isListLayout ? 'list' : 'cards');
@@ -610,7 +1208,11 @@ runFetchBtn.addEventListener('click', async () => {
 
     try {
         await apiFetch('/api/fetch/run', { method: 'POST' });
-        await loadArticles();
+        articlesNeedsRefresh = true;
+        if (isViewActive('main')) {
+            await loadArticles();
+        }
+        requestDigestRefresh({ force: true });
         await loadFetchStatus();
     } catch (err) {
         alert(`Fetch fehlgeschlagen: ${err.message}`);
@@ -619,6 +1221,36 @@ runFetchBtn.addEventListener('click', async () => {
         runFetchBtn.textContent = 'fetch now';
     }
 });
+
+if (digestSortToggle && digestSortOptions.length > 0) {
+    updateDigestSortUi();
+    digestSortOptions.forEach(option => {
+        option.addEventListener('click', () => {
+            const nextDirection = option.dataset.digestSort === 'asc' ? 'asc' : 'desc';
+            if (nextDirection === digestSortDirection) {
+                return;
+            }
+            digestSortDirection = nextDirection;
+            localStorage.setItem(DIGEST_SORT_KEY, digestSortDirection);
+            updateDigestSortUi();
+
+            if (lastDigestPayload) {
+                renderDigestClusters(lastDigestPayload);
+                return;
+            }
+            loadDailyDigest();
+        });
+    });
+} else {
+    localStorage.setItem(DIGEST_SORT_KEY, digestSortDirection);
+}
+
+if (digestMarkAllBtn) {
+    updateDigestMarkAllButton(lastDigestPayload);
+    digestMarkAllBtn.addEventListener('click', async () => {
+        await markAllVisibleAsDigested();
+    });
+}
 
 searchInput.addEventListener('input', () => {
     if (searchTimer) {
@@ -642,17 +1274,18 @@ window.__nbsSearchSelection = value => {
 
 async function boot() {
     applyLayoutState();
-    updateSettingsTabsScrollState();
+    updateStickySubnavScrollState();
     await loadFeeds();
     await loadLists();
     await loadArticles();
+    await loadDailyDigest({ force: true });
     await loadFetchStatus();
     setupSse();
 }
 
 boot();
 
-window.addEventListener('scroll', updateSettingsTabsScrollState, { passive: true });
+window.addEventListener('scroll', updateStickySubnavScrollState, { passive: true });
 
 function setupSse() {
     if (sse) {
@@ -664,8 +1297,23 @@ function setupSse() {
             const payload = JSON.parse(event.data || '{}');
             const eventName = payload.event || '';
             if (eventName === 'fetch.completed') {
-                loadArticles();
+                articlesNeedsRefresh = true;
+                if (isViewActive('main')) {
+                    loadArticles();
+                }
+                requestDigestRefresh();
                 loadFetchStatus();
+            }
+            if (eventName === 'articles.updated') {
+                const source = payload?.data?.source || '';
+                if (source === 'daily-digest' && pendingDigestMutationEventsToSkip > 0) {
+                    pendingDigestMutationEventsToSkip -= 1;
+                    return;
+                }
+                requestDigestRefresh();
+            }
+            if (eventName.startsWith('webhook.')) {
+                requestDigestRefresh();
             }
             if (eventName === 'feeds.updated') {
                 loadFeeds();
@@ -674,7 +1322,10 @@ function setupSse() {
                 loadLists();
             }
             if (eventName === 'lists.items.updated') {
-                loadArticles();
+                articlesNeedsRefresh = true;
+                if (isViewActive('main')) {
+                    loadArticles();
+                }
             }
         } catch {
             return;

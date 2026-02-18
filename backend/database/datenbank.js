@@ -66,4 +66,15 @@ export async function ensureListColorColumn() {
     await run("UPDATE lists SET color = '#1d1d1f' WHERE color IS NULL OR color = ''");
 }
 
+export async function ensureArticleDailyDigestedColumn() {
+    const columns = await all('PRAGMA table_info(articles)');
+    const hasDailyDigested = columns.some(col => col.name === 'dailyDigested');
+
+    if (!hasDailyDigested) {
+        await run('ALTER TABLE articles ADD COLUMN dailyDigested INTEGER NOT NULL DEFAULT 0');
+    }
+
+    await run('UPDATE articles SET dailyDigested = 0 WHERE dailyDigested IS NULL');
+}
+
 export default db;

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS articles (
   url TEXT UNIQUE,
   publishedAt TEXT,
   guidOrHash TEXT UNIQUE,
+  dailyDigested INTEGER NOT NULL DEFAULT 0,
   createdAt TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (feedId) REFERENCES feeds(id) ON DELETE CASCADE
 );

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import feedsRouter from './routes/feeds.js';
 import articlesRouter from './routes/articles.js';
 import listsRouter from './routes/lists.js';
+import webhookRouter from './routes/webhook.js';
 import { startScheduler } from './services/scheduler.js';
 import { getLastFetchStatus, updateAllFeeds } from './services/fetcher.js';
 import { subscribe } from './services/events.js';
@@ -51,6 +52,7 @@ app.get('/api/events', (req, res) => {
 app.use('/api/feeds', feedsRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/lists', listsRouter);
+app.use('/api/webhook', webhookRouter);
 
 app.post('/api/fetch/run', async (req, res, next) => {
     if (isManualFetchRunning) {

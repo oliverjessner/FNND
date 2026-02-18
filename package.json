@@ -14,6 +14,7 @@
         "dist:all:workaround": "PYTHON=/opt/homebrew/opt/python@3.11/bin/python3.11 CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:all"
     },
     "dependencies": {
+        "@biu/simhash": "^0.1.1",
         "@vscode/sqlite3": "5.1.12-vscode",
         "express": "^5.2.1",
         "iconv-lite": "^0.6.3",

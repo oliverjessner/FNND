@@ -188,10 +188,9 @@ function buildContextMenuTemplate(win, params) {
 async function createWindow() {
     const iconPath = path.join(__dirname, '..', 'public', 'images', 'logo', 'logo_app.png');
     const appIcon = nativeImage.createFromPath(iconPath);
-
     const win = new BrowserWindow({
-        width: 1280,
-        height: 800,
+        width: 1480,
+        height: 1000,
         minWidth: 720,
         minHeight: 500,
         backgroundColor: '#f7f8fa',

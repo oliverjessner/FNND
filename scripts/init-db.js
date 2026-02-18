@@ -1,7 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { all, ensureFeedLogoColumns, ensureListColorColumn, initSchema, run } from '../backend/database/datenbank.js';
+import {
+    all,
+    ensureArticleDailyDigestedColumn,
+    ensureFeedLogoColumns,
+    ensureListColorColumn,
+    initSchema,
+    run,
+} from '../backend/database/datenbank.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +39,7 @@ export async function initDatabase() {
     await initSchema();
     await ensureFeedLogoColumns();
     await ensureListColorColumn();
+    await ensureArticleDailyDigestedColumn();
     await seedFeeds();
 }
 

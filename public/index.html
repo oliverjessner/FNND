@@ -12,10 +12,11 @@
             <div class="brand">
                 <img class="brand-logo" src="/images/logo/logo.png" alt="No Bullshit RSS" />
             </div>
-            <div class="brand">NO BULL💩 RSS</div>
 
             <nav class="nav">
-                <button class="nav-link is-active" data-view="main">Main</button>
+                <button class="nav-link" data-view="digest">Daily Digest</button>
+
+                <button class="nav-link is-active" data-view="main">Dashboard</button>
                 <button class="nav-link" data-view="settings">Settings</button>
             </nav>
         </header>
@@ -24,7 +25,6 @@
             <section id="view-main" class="view is-active">
                 <div class="toolbar">
                     <div class="toolbar-actions">
-                        <button id="refresh-articles" class="btn">refresh</button>
                         <input id="search-input" class="search-input" type="search" placeholder="Search…" />
 
                         <button id="toggle-layout" class="btn toggle" data-layout="cards" aria-pressed="false">
@@ -50,10 +50,45 @@
                 </div>
             </section>
 
+            <section id="view-digest" class="view view-digest">
+                <div class="digest-scroll">
+                    <div class="digest-header">
+                        <h2 id="digest-title" class="digest-title">Lädt…</h2>
+                        <div class="digest-header-meta">
+                            <p id="digest-subtitle" class="digest-subtitle">Lädt…</p>
+                            <button id="digest-mark-all" class="btn ghost" type="button">Mark all as digested</button>
+                            <div id="digest-sort-toggle" class="digest-sort-toggle" role="group" aria-label="Sort clusters">
+                                <button
+                                    class="digest-sort-option"
+                                    data-digest-sort="desc"
+                                    type="button"
+                                    aria-pressed="true"
+                                >
+                                    Descending
+                                </button>
+                                <button
+                                    class="digest-sort-option"
+                                    data-digest-sort="asc"
+                                    type="button"
+                                    aria-pressed="false"
+                                >
+                                    Ascending
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2 id="digest-state" class="state">Lädt…</h2>
+                    <div id="digest-list" class="digest-clusters"></div>
+                </div>
+            </section>
+
             <section id="view-settings" class="view view-settings">
                 <div class="settings-tabs-wrap">
                     <div class="settings-tabs">
-                        <button class="settings-tab is-active" data-settings="feeds" type="button">Feeds</button>
+                        <button class="settings-tab is-active" data-settings="feeds" type="button">
+                            Add new RSS Feeds
+                        </button>
                         <button class="settings-tab" data-settings="lists" type="button">Lists</button>
                     </div>
                 </div>
@@ -81,6 +116,7 @@
                             <div id="feed-form-status" class="form-status"></div>
                         </form>
                         <div id="fetch-status" class="status-line">Letzter Fetch: —</div>
+                        <div id="article-count-status" class="status-line">Gespeicherte Artikel: —</div>
                     </div>
 
                     <div class="settings-feeds-content">
@@ -90,28 +126,32 @@
                 </div>
 
                 <div id="settings-lists" class="settings-panel">
-                    <form id="list-form" class="card form">
-                        <div class="form-row">
-                            <label>Name</label>
-                            <input type="text" id="list-name" placeholder="e. g. Readinglist" required />
-                        </div>
-                        <div class="form-row">
-                            <label>Description</label>
-                            <input type="text" id="list-description" placeholder="optional" />
-                        </div>
-                        <div class="form-row">
-                            <label>Color</label>
-                            <input type="color" class="color-picker" id="list-color" value="#1d1d1f" />
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn primary" id="list-submit">save list</button>
-                            <button type="button" class="btn ghost" id="list-cancel">cancel</button>
-                        </div>
-                        <div id="list-form-status" class="form-status"></div>
-                    </form>
+                    <div class="settings-lists-left">
+                        <form id="list-form" class="card form">
+                            <div class="form-row">
+                                <label>Name</label>
+                                <input type="text" id="list-name" placeholder="e. g. Readinglist" required />
+                            </div>
+                            <div class="form-row">
+                                <label>Description</label>
+                                <input type="text" id="list-description" placeholder="optional" />
+                            </div>
+                            <div class="form-row">
+                                <label>Color</label>
+                                <input type="color" class="color-picker" id="list-color" value="#1d1d1f" />
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn primary" id="list-submit">save list</button>
+                                <button type="button" class="btn ghost" id="list-cancel">cancel</button>
+                            </div>
+                            <div id="list-form-status" class="form-status"></div>
+                        </form>
+                    </div>
 
-                    <div id="lists-state" class="state">Lädt…</div>
-                    <div id="lists-list" class="list"></div>
+                    <div class="settings-lists-content">
+                        <div id="lists-state" class="state">Lädt…</div>
+                        <div id="lists-list" class="list"></div>
+                    </div>
                 </div>
 
                 <footer class="settings-footer">
@@ -192,6 +232,22 @@
                     <button class="btn danger btn-delete">Löschen</button>
                 </div>
             </div>
+        </template>
+
+        <template id="digest-cluster-template">
+            <article class="card digest-cluster">
+                <div class="digest-cluster-header">
+                    <div class="digest-cluster-main">
+                        <span class="digest-cluster-count"></span>
+                        <h3 class="title digest-cluster-title"></h3>
+                    </div>
+                    <div class="digest-cluster-side">
+                        <span class="digest-cluster-date"></span>
+                        <div class="digest-cluster-sources"></div>
+                    </div>
+                </div>
+                <div class="digest-items-grid"></div>
+            </article>
         </template>
 
         <script src="/app.js" type="module"></script>
