@@ -1,9 +1,8 @@
 # NO BULLSHIT RSS
 
 I vibe coded some electron slop.
-check out the [Landing page](https://oliverjessner.at/no-bullshit-rss/#promise).
 
-![overview of the app](/public/images/cards.webp)
+![overview of the app](/public/images/mockups/both_daily_digest.png)
 
 No-Bullshit RSS is a minimal, open-source RSS reader that focuses on reading—not dashboards, upsells, or noise. It’s free, has no payments, and stores your feeds in a self-hosted database so you stay in control of your data.
 
@@ -17,14 +16,37 @@ highlights
 - Dark mode
 - Storage visibility: settings now show how many articles are in your database
 
+![overview of the app](/public/images/mockups/both_dashboard.png)
+
+also check out the [Landing page](https://oliverjessner.at/no-bullshit-rss/#promise).
+
 ## run as electron
 
 ```bash
 npm run electron
 ```
 
-## build for electron
+## build for electron (macOS local)
+
+```bash
+npm run dist:mac
+```
+
+`dist:mac` builds a macOS arm64 DMG only.
+
+## build for electron (mac, win, linux)
+
+```bash
+npm run build:all
+```
+
+`build:all` runs the legacy all-platform flow:
 
 ```bash
 npm run dist:all:workaround
 ```
+
+Optional per-platform scripts:
+
+- `npm run dist:win`
+- `npm run dist:linux`

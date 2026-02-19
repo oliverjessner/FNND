@@ -8,7 +8,7 @@ Features:
 - darkmode
 - The settings are telling you now how many articles are stored in your database
 
-Minor fixes
+Minor fixes:
 
 - everything in english, better naming (contrast in darkmode is not very a11y friendly)
 - a lot of ux/uie improvements
@@ -17,3 +17,9 @@ Minor fixes
 - buy me a coffee button in about window :)
 - starting to code again some minor parts
 - updated outdated deps
+
+ToDo:
+
+- By the love of god some guy with windows please tell me if it is running
+- Maybe some test will be fine (someday?)
+- get some test from other people, it works on my machine 24/7 so yeah
