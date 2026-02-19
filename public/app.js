@@ -23,6 +23,7 @@ const filterList = document.getElementById('filter-list');
 const filterSource = document.getElementById('filter-source');
 const runFetchBtn = document.getElementById('run-fetch');
 const toggleLayoutBtn = document.getElementById('toggle-layout');
+const themeToggleBtn = document.getElementById('theme-toggle');
 const fetchStatus = document.getElementById('fetch-status');
 const articleCountStatus = document.getElementById('article-count-status');
 const searchInput = document.getElementById('search-input');
@@ -55,6 +56,7 @@ const modalConfirm = document.getElementById('modal-confirm');
 const modalExistingLists = document.getElementById('modal-existing-lists');
 const LAYOUT_KEY = 'fnnd.layout';
 const DIGEST_SORT_KEY = 'fnnd.digestSort';
+const THEME_KEY = 'fnnd.theme';
 
 let loadingStartedAt = 0;
 let isListLayout = localStorage.getItem(LAYOUT_KEY) === 'list';
@@ -63,6 +65,7 @@ let listEditingId = null;
 let pendingArticleId = null;
 let sse = null;
 let digestSortDirection = localStorage.getItem(DIGEST_SORT_KEY) === 'asc' ? 'asc' : 'desc';
+let isDarkTheme = localStorage.getItem(THEME_KEY) === 'dark';
 let lastDigestPayload = null;
 let digestNeedsRefresh = true;
 let digestLoadPromise = null;
@@ -282,14 +285,42 @@ settingsTabs.forEach(tab => {
 });
 
 function applyLayoutState() {
+    const applyToggleState = (toggleBtn, enabled, { onLabel, offLabel, onValue, offValue }, dataKey) => {
+        if (!toggleBtn) {
+            return;
+        }
+        toggleBtn.classList.toggle('is-on', enabled);
+        toggleBtn.setAttribute('aria-pressed', String(enabled));
+        if (dataKey) {
+            toggleBtn.dataset[dataKey] = enabled ? onValue : offValue;
+        }
+        const label = toggleBtn.querySelector('.toggle-label');
+        if (label) {
+            label.textContent = enabled ? onLabel : offLabel;
+        }
+    };
+
     articlesList.classList.toggle('is-list', isListLayout);
-    toggleLayoutBtn.classList.toggle('is-on', isListLayout);
-    toggleLayoutBtn.dataset.layout = isListLayout ? 'list' : 'cards';
-    toggleLayoutBtn.setAttribute('aria-pressed', String(isListLayout));
-    const label = toggleLayoutBtn.querySelector('.toggle-label');
-    if (label) {
-        label.textContent = isListLayout ? 'Liste' : 'Cards';
+    applyToggleState(toggleLayoutBtn, isListLayout, {
+        onLabel: 'Liste',
+        offLabel: 'Cards',
+        onValue: 'list',
+        offValue: 'cards',
+    }, 'layout');
+
+    if (themeToggleBtn) {
+        applyToggleState(themeToggleBtn, isDarkTheme, {
+            onLabel: 'Dark',
+            offLabel: 'Light',
+            onValue: 'dark',
+            offValue: 'light',
+        }, 'themeMode');
     }
+}
+
+function applyThemeState() {
+    document.documentElement.setAttribute('data-theme', isDarkTheme ? 'dark' : 'light');
+    applyLayoutState();
 }
 
 function getPageScrollTop() {
@@ -1202,6 +1233,13 @@ toggleLayoutBtn.addEventListener('click', () => {
     localStorage.setItem(LAYOUT_KEY, isListLayout ? 'list' : 'cards');
     applyLayoutState();
 });
+if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', () => {
+        isDarkTheme = !isDarkTheme;
+        localStorage.setItem(THEME_KEY, isDarkTheme ? 'dark' : 'light');
+        applyThemeState();
+    });
+}
 runFetchBtn.addEventListener('click', async () => {
     runFetchBtn.disabled = true;
     runFetchBtn.textContent = 'fetching…';
@@ -1273,6 +1311,7 @@ window.__nbsSearchSelection = value => {
 };
 
 async function boot() {
+    applyThemeState();
     applyLayoutState();
     updateStickySubnavScrollState();
     await loadFeeds();

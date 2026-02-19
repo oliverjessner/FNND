@@ -323,6 +323,8 @@ body {
     align-items: flex-end;
     justify-content: space-between;
     gap: var(--space-12);
+    margin-inline: calc(-1 * var(--padding-page-inline));
+    padding-inline: var(--padding-page-inline);
     padding-block: var(--padding-toolbar-block);
     margin-block-end: var(--margin-digest-header-block-end);
     background: transparent;
@@ -985,6 +987,19 @@ select {
     border: var(--border-width-default) solid var(--color-border-default);
     border-radius: var(--radius-lg);
     font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+    background: var(--color-bg-surface);
+}
+
+input::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+}
+
+[data-theme='dark'] select option,
+[data-theme='dark'] select optgroup {
+    color: var(--color-text-primary);
+    background: var(--color-bg-surface);
 }
 
 .form-actions {
@@ -1052,6 +1067,10 @@ select {
     padding-inline: var(--padding-page-inline);
 }
 
+.settings-panel-single.is-active {
+    grid-template-columns: var(--layout-grid-fr);
+}
+
 .settings-panel .form {
     margin-block-end: 0;
 }
@@ -1061,6 +1080,20 @@ select {
     flex-direction: column;
     gap: var(--margin-modal-status-gap);
     min-inline-size: 0;
+}
+
+.settings-cosmetics-content {
+    max-inline-size: var(--size-settings-panel-column-max);
+}
+
+.settings-cosmetics-card {
+    gap: var(--space-12);
+}
+
+.settings-cosmetics-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
 }
 
 .settings-feeds-left .status-line {
@@ -1146,6 +1179,7 @@ select {
 .btn.toggle .toggle-label {
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
+    white-space: nowrap;
 }
 
 .btn.toggle.is-on .toggle-label {

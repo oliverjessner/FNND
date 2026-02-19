@@ -252,6 +252,10 @@ function createAboutWindow() {
       h1 { margin: 0 0 8px; font-size: 18px; }
       .meta { color: #444; margin-bottom: 12px; }
       .fine { color: #666; font-size: 12px; margin-bottom: 16px; }
+      .support { margin-bottom: 16px; }
+      .support-title { color: #444; font-size: 12px; margin-bottom: 8px; }
+      .support-fallback { margin-top: 8px; font-size: 12px; }
+      .support-fallback a { color: #111; }
       .actions { display: flex; justify-content: flex-end; }
       button { border: 0; background: #1d1d1f; color: #fff; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
       button:focus { outline: 2px solid #7aa2ff; outline-offset: 2px; }
@@ -261,7 +265,23 @@ function createAboutWindow() {
     <div class="wrap">
       <h1>${name}</h1>
       <div class="meta">Version ${version}</div>
-      <div class="fine">© Copyright Oliver Jessner</div>
+      <div class="fine">© Copyright <a href="https://oliverjessner.com">Oliver Jessner</a></div>
+      <div class="support">
+        <div class="support-title">Support development</div>
+        <script
+          type="text/javascript"
+          src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js"
+          data-name="bmc-button"
+          data-slug="oliverjessner"
+          data-color="#FFDD00"
+          data-emoji="☕️"
+          data-font="Cookie"
+          data-text="Buy me a coffee"
+          data-outline-color="#000000"
+          data-font-color="#000000"
+          data-coffee-color="#ffffff"
+        ></script>
+      </div>
       <div class="actions">
         <button id="close">Close</button>
       </div>
@@ -273,8 +293,8 @@ function createAboutWindow() {
 </html>`;
 
     aboutWindow = new BrowserWindow({
-        width: 420,
-        height: 220,
+        width: 460,
+        height: 340,
         resizable: false,
         minimizable: false,
         maximizable: false,
@@ -291,6 +311,21 @@ function createAboutWindow() {
 
     aboutWindow.on('closed', () => {
         aboutWindow = null;
+    });
+
+    aboutWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith('http')) {
+            shell.openExternal(url);
+            return { action: 'deny' };
+        }
+        return { action: 'allow' };
+    });
+
+    aboutWindow.webContents.on('will-navigate', (event, url) => {
+        if (url.startsWith('http')) {
+            event.preventDefault();
+            shell.openExternal(url);
+        }
     });
 
     aboutWindow.setMenu(null);
