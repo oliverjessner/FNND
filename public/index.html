@@ -25,12 +25,13 @@
             <section id="view-main" class="view is-active">
                 <div class="toolbar">
                     <div class="toolbar-actions">
-                        <input id="search-input" class="search-input" type="search" placeholder="Search…" />
-
                         <button id="toggle-layout" class="btn toggle" data-layout="cards" aria-pressed="false">
                             <span class="toggle-track"></span>
                             <span class="toggle-label">Cards</span>
                         </button>
+
+                        <input id="search-input" class="search-input" type="search" placeholder="Search…" />
+
                         <select id="filter-list" class="select">
                             <option value="">all lists</option>
                         </select>
@@ -38,7 +39,7 @@
                             <option value="">all sources</option>
                         </select>
 
-                        <button id="run-fetch" class="btn ghost">refetch</button>
+                        <button id="run-fetch" class="btn danger" type="button">clear</button>
                     </div>
                 </div>
                 <div id="loading-row" class="loading-row">
@@ -57,7 +58,12 @@
                         <div class="digest-header-meta">
                             <p id="digest-subtitle" class="digest-subtitle">Lädt…</p>
                             <button id="digest-mark-all" class="btn ghost" type="button">Mark all as digested</button>
-                            <div id="digest-sort-toggle" class="digest-sort-toggle" role="group" aria-label="Sort clusters">
+                            <div
+                                id="digest-sort-toggle"
+                                class="digest-sort-toggle"
+                                role="group"
+                                aria-label="Sort clusters"
+                            >
                                 <button
                                     class="digest-sort-option"
                                     data-digest-sort="desc"
@@ -90,6 +96,7 @@
                             Add new RSS Feeds
                         </button>
                         <button class="settings-tab" data-settings="lists" type="button">Lists</button>
+                        <button class="settings-tab" data-settings="digest" type="button">Daily Digest</button>
                         <button class="settings-tab" data-settings="cosmetics" type="button">Cosmetics</button>
                     </div>
                 </div>
@@ -110,7 +117,7 @@
                                 <input type="url" id="feed-url" placeholder="https://example.com/feed.xml" required />
                             </div>
                             <div class="form-actions">
-                                <button type="submit" class="btn primary" id="feed-submit">store feed</button>
+                                <button type="submit" class="btn success" id="feed-submit">store feed</button>
                                 <button type="button" class="btn ghost" id="feed-cancel">cancel</button>
                                 <button type="button" class="btn" id="feed-test">test feed</button>
                             </div>
@@ -118,6 +125,9 @@
                         </form>
                         <div id="fetch-status" class="status-line">Letzter Fetch: —</div>
                         <div id="article-count-status" class="status-line">Gespeicherte Artikel: —</div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" id="settings-fetch-now">fetch now</button>
+                        </div>
                     </div>
 
                     <div class="settings-feeds-content">
@@ -142,7 +152,7 @@
                                 <input type="color" class="color-picker" id="list-color" value="#1d1d1f" />
                             </div>
                             <div class="form-actions">
-                                <button type="submit" class="btn primary" id="list-submit">save list</button>
+                                <button type="submit" class="btn success" id="list-submit">save list</button>
                                 <button type="button" class="btn ghost" id="list-cancel">cancel</button>
                             </div>
                             <div id="list-form-status" class="form-status"></div>
@@ -152,6 +162,45 @@
                     <div class="settings-lists-content">
                         <div id="lists-state" class="state">Lädt…</div>
                         <div id="lists-list" class="list"></div>
+                    </div>
+                </div>
+
+                <div id="settings-digest" class="settings-panel settings-panel-single">
+                    <div class="settings-digest-content">
+                        <section class="card settings-digest-card">
+                            <h3 class="title">Excluded RSS Feeds</h3>
+                            <p class="teaser">
+                                Selected feeds are ignored in Daily Digest and will not appear in clustered results.
+                            </p>
+                            <div id="digest-settings-feeds-state" class="form-status">Lädt…</div>
+                            <div id="digest-settings-feeds-list" class="settings-digest-feed-list"></div>
+                            <div class="form-actions">
+                                <button id="digest-settings-save-feeds" type="button" class="btn success">
+                                    save feed filter
+                                </button>
+                            </div>
+                        </section>
+
+                        <section class="card settings-digest-card">
+                            <h3 class="title">Blocked Words</h3>
+                            <p class="teaser">
+                                Articles containing one of these words in title or teaser are excluded from Daily
+                                Digest.
+                            </p>
+                            <div class="form-row">
+                                <label>Word</label>
+                                <input
+                                    type="text"
+                                    id="digest-block-word-input"
+                                    placeholder="z. B. promo, sponsored, football"
+                                />
+                            </div>
+                            <div class="form-actions">
+                                <button id="digest-block-word-add" type="button" class="btn success">add word</button>
+                            </div>
+                            <div id="digest-block-words-state" class="form-status">Lädt…</div>
+                            <div id="digest-block-words-list" class="settings-digest-block-list"></div>
+                        </section>
                     </div>
                 </div>
 
@@ -181,10 +230,10 @@
             <article class="card">
                 <div class="meta">
                     <span class="meta-date"></span>
-                    <span class="meta-source">
-                        <span class="source-name"></span>
-                        <img class="source-logo" alt="" />
-                    </span>
+                    <button class="meta-source digest-source-chip" type="button">
+                        <img class="source-logo digest-source-logo" alt="" />
+                        <span class="source-name digest-source-name"></span>
+                    </button>
                 </div>
                 <div class="content">
                     <h3 class="title"></h3>
@@ -216,20 +265,20 @@
         <div id="modal-backdrop" class="modal-backdrop" aria-hidden="true">
             <div class="modal">
                 <div class="modal-header">
-                    <div class="modal-title">Zu Liste hinzufügen</div>
+                    <div class="modal-title">Add to list</div>
                     <button class="btn ghost" id="modal-close" type="button">✕</button>
                 </div>
                 <div class="modal-body">
-                    <label for="modal-list-select">Liste auswählen</label>
+                    <label for="modal-list-select">Choose list</label>
                     <select id="modal-list-select" class="select"></select>
                     <div class="modal-existing">
-                        <div class="modal-existing-title">Bereits in:</div>
+                        <div class="modal-existing-title">Already in:</div>
                         <div id="modal-existing-lists" class="modal-existing-list">—</div>
                     </div>
                 </div>
                 <div class="modal-actions">
-                    <button class="btn ghost" id="modal-cancel" type="button">Abbrechen</button>
-                    <button class="btn primary" id="modal-confirm" type="button">Hinzufügen</button>
+                    <button class="btn ghost" id="modal-cancel" type="button">Cancel</button>
+                    <button class="btn success" id="modal-confirm" type="button">Add</button>
                 </div>
             </div>
         </div>

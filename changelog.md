@@ -1,3 +1,17 @@
+## 0.2.0
+
+Features:
+
+- Lists can now be removed
+- dailyDigest now has lists
+- clear button in dashboard (or press esc)
+- stop words and excluding sources for daily digest
+
+Minor fixes:
+
+- removed the last german from a modal window
+- red and green buttons
+
 ## 0.1.0
 
 Features:

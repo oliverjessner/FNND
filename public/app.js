@@ -1,6 +1,10 @@
 const state = Object.seal({
     feeds: [],
     lists: [],
+    digestSettings: {
+        excludedFeedIds: [],
+        blockedWords: [],
+    },
     editingId: null,
 });
 const views = document.querySelectorAll('.view');
@@ -26,6 +30,14 @@ const toggleLayoutBtn = document.getElementById('toggle-layout');
 const themeToggleBtn = document.getElementById('theme-toggle');
 const fetchStatus = document.getElementById('fetch-status');
 const articleCountStatus = document.getElementById('article-count-status');
+const settingsFetchNowBtn = document.getElementById('settings-fetch-now');
+const digestSettingsFeedsState = document.getElementById('digest-settings-feeds-state');
+const digestSettingsFeedsList = document.getElementById('digest-settings-feeds-list');
+const digestSettingsSaveFeeds = document.getElementById('digest-settings-save-feeds');
+const digestBlockWordInput = document.getElementById('digest-block-word-input');
+const digestBlockWordAdd = document.getElementById('digest-block-word-add');
+const digestBlockWordsState = document.getElementById('digest-block-words-state');
+const digestBlockWordsList = document.getElementById('digest-block-words-list');
 const searchInput = document.getElementById('search-input');
 const loadingRow = document.getElementById('loading-row');
 const feedForm = document.getElementById('feed-form');
@@ -62,7 +74,6 @@ let loadingStartedAt = 0;
 let isListLayout = localStorage.getItem(LAYOUT_KEY) === 'list';
 let searchTimer = null;
 let listEditingId = null;
-let pendingArticleId = null;
 let sse = null;
 let digestSortDirection = localStorage.getItem(DIGEST_SORT_KEY) === 'asc' ? 'asc' : 'desc';
 let isDarkTheme = localStorage.getItem(THEME_KEY) === 'dark';
@@ -72,6 +83,8 @@ let digestLoadPromise = null;
 let lastDigestRenderFingerprint = '';
 let articlesNeedsRefresh = true;
 let pendingDigestMutationEventsToSkip = 0;
+let pendingArticleIds = [];
+let clearDashboardPromise = null;
 
 function updateDigestSortUi() {
     if (!digestSortOptions || digestSortOptions.length === 0) {
@@ -377,8 +390,252 @@ async function loadFetchStatus() {
     }
 }
 
+async function runManualFetch(triggerBtn) {
+    if (!triggerBtn) {
+        return;
+    }
+
+    const previousLabel = triggerBtn.textContent;
+    triggerBtn.disabled = true;
+    triggerBtn.textContent = 'fetching…';
+
+    try {
+        await apiFetch('/api/fetch/run', { method: 'POST' });
+        articlesNeedsRefresh = true;
+        if (isViewActive('main')) {
+            await loadArticles();
+        }
+        requestDigestRefresh({ force: true });
+        await loadFetchStatus();
+    } catch (err) {
+        alert(`Fetch fehlgeschlagen: ${err.message}`);
+    } finally {
+        triggerBtn.disabled = false;
+        triggerBtn.textContent = previousLabel;
+    }
+}
+
 function setStatus(element, message) {
     element.textContent = message || '';
+}
+
+function normalizeDigestSettingFeedIds(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const ids = new Set();
+    value.forEach(feedId => {
+        const normalized = Number(feedId);
+        if (Number.isInteger(normalized) && normalized > 0) {
+            ids.add(normalized);
+        }
+    });
+    return Array.from(ids);
+}
+
+function getSelectedDigestExcludedFeedIds() {
+    if (!digestSettingsFeedsList) {
+        return [];
+    }
+
+    const selected = [];
+    const checkboxes = digestSettingsFeedsList.querySelectorAll('input[type="checkbox"][data-feed-id]');
+    checkboxes.forEach(input => {
+        if (!input.checked) {
+            return;
+        }
+        const feedId = Number(input.dataset.feedId);
+        if (Number.isInteger(feedId) && feedId > 0) {
+            selected.push(feedId);
+        }
+    });
+
+    return normalizeDigestSettingFeedIds(selected);
+}
+
+function renderDigestSettings() {
+    if (!digestSettingsFeedsList || !digestBlockWordsList) {
+        return;
+    }
+
+    const excludedSet = new Set(
+        normalizeDigestSettingFeedIds(state.digestSettings?.excludedFeedIds || []).map(feedId => String(feedId)),
+    );
+
+    digestSettingsFeedsList.innerHTML = '';
+
+    if (!Array.isArray(state.feeds) || state.feeds.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'state';
+        empty.textContent = 'Noch keine Feeds vorhanden.';
+        digestSettingsFeedsList.appendChild(empty);
+    } else {
+        state.feeds.forEach(feed => {
+            const feedId = Number(feed.id);
+            const row = document.createElement('label');
+            row.className = 'settings-digest-feed-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.dataset.feedId = String(feedId);
+            checkbox.checked = excludedSet.has(String(feedId));
+            row.appendChild(checkbox);
+
+            const textWrap = document.createElement('span');
+            textWrap.className = 'settings-digest-feed-item-text';
+
+            const title = document.createElement('span');
+            title.className = 'settings-digest-feed-item-title';
+            title.textContent = feed.name || 'Unnamed feed';
+
+            const meta = document.createElement('span');
+            meta.className = 'settings-digest-feed-item-meta';
+            meta.textContent = feed.feedUrl || feed.websiteUrl || '';
+
+            textWrap.appendChild(title);
+            textWrap.appendChild(meta);
+            row.appendChild(textWrap);
+
+            digestSettingsFeedsList.appendChild(row);
+        });
+    }
+
+    digestBlockWordsList.innerHTML = '';
+
+    const blockedWords = Array.isArray(state.digestSettings?.blockedWords) ? state.digestSettings.blockedWords : [];
+
+    if (blockedWords.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'state';
+        empty.textContent = 'Keine geblockten Wörter vorhanden.';
+        digestBlockWordsList.appendChild(empty);
+        return;
+    }
+
+    blockedWords.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'settings-digest-word-item';
+
+        const wordLabel = document.createElement('span');
+        wordLabel.className = 'settings-digest-word-label';
+        wordLabel.textContent = item.word;
+        row.appendChild(wordLabel);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn danger';
+        removeBtn.textContent = 'remove';
+        removeBtn.addEventListener('click', async () => {
+            try {
+                await apiFetch(`/api/digest-settings/blocked-words/${item.id}`, { method: 'DELETE' });
+                setStatus(digestBlockWordsState, '');
+                await loadDigestSettings({ silent: true });
+                requestDigestRefresh({ force: true });
+            } catch (err) {
+                setStatus(digestBlockWordsState, `Fehler: ${err.message}`);
+            }
+        });
+        row.appendChild(removeBtn);
+
+        digestBlockWordsList.appendChild(row);
+    });
+}
+
+async function loadDigestSettings({ silent = false } = {}) {
+    if (!digestSettingsFeedsState || !digestBlockWordsState) {
+        return;
+    }
+
+    if (!silent) {
+        setStatus(digestSettingsFeedsState, 'Lädt…');
+        setStatus(digestBlockWordsState, 'Lädt…');
+    }
+
+    try {
+        const payload = await apiFetch('/api/digest-settings');
+        state.digestSettings = {
+            excludedFeedIds: normalizeDigestSettingFeedIds(payload?.excludedFeedIds || []),
+            blockedWords: Array.isArray(payload?.blockedWords) ? payload.blockedWords : [],
+        };
+        setStatus(digestSettingsFeedsState, '');
+        setStatus(digestBlockWordsState, '');
+        renderDigestSettings();
+    } catch (err) {
+        setStatus(digestSettingsFeedsState, `Fehler: ${err.message}`);
+        setStatus(digestBlockWordsState, `Fehler: ${err.message}`);
+    }
+}
+
+async function saveDigestExcludedFeeds() {
+    if (!digestSettingsSaveFeeds) {
+        return;
+    }
+
+    const selectedFeedIds = getSelectedDigestExcludedFeedIds();
+    const previousLabel = digestSettingsSaveFeeds.textContent;
+
+    digestSettingsSaveFeeds.disabled = true;
+    digestSettingsSaveFeeds.textContent = 'saving…';
+    setStatus(digestSettingsFeedsState, 'Speichern…');
+
+    try {
+        const payload = await apiFetch('/api/digest-settings/excluded-feeds', {
+            method: 'PUT',
+            body: JSON.stringify({ feedIds: selectedFeedIds }),
+        });
+
+        state.digestSettings = {
+            excludedFeedIds: normalizeDigestSettingFeedIds(payload?.excludedFeedIds || []),
+            blockedWords: Array.isArray(payload?.blockedWords) ? payload.blockedWords : [],
+        };
+        setStatus(digestSettingsFeedsState, `Gespeichert (${state.digestSettings.excludedFeedIds.length} excluded).`);
+        setStatus(digestBlockWordsState, '');
+        renderDigestSettings();
+        requestDigestRefresh({ force: true });
+    } catch (err) {
+        setStatus(digestSettingsFeedsState, `Fehler: ${err.message}`);
+    } finally {
+        digestSettingsSaveFeeds.disabled = false;
+        digestSettingsSaveFeeds.textContent = previousLabel;
+    }
+}
+
+async function addDigestBlockedWord() {
+    if (!digestBlockWordInput || !digestBlockWordAdd) {
+        return;
+    }
+
+    const word = String(digestBlockWordInput.value || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 120);
+
+    if (word.length < 2) {
+        setStatus(digestBlockWordsState, 'Bitte mindestens 2 Zeichen eingeben.');
+        return;
+    }
+
+    const previousLabel = digestBlockWordAdd.textContent;
+    digestBlockWordAdd.disabled = true;
+    digestBlockWordAdd.textContent = 'adding…';
+    setStatus(digestBlockWordsState, 'Speichern…');
+
+    try {
+        await apiFetch('/api/digest-settings/blocked-words', {
+            method: 'POST',
+            body: JSON.stringify({ word }),
+        });
+        digestBlockWordInput.value = '';
+        setStatus(digestBlockWordsState, '');
+        await loadDigestSettings({ silent: true });
+        requestDigestRefresh({ force: true });
+    } catch (err) {
+        setStatus(digestBlockWordsState, `Fehler: ${err.message}`);
+    } finally {
+        digestBlockWordAdd.disabled = false;
+        digestBlockWordAdd.textContent = previousLabel;
+    }
 }
 
 async function apiFetch(url, options = {}) {
@@ -494,19 +751,56 @@ function renderLists() {
     });
 }
 
-async function openListModal(articleId) {
-    pendingArticleId = articleId;
+async function openListModal(articleIdsOrId) {
+    const articleIds = Array.isArray(articleIdsOrId)
+        ? getNormalizedArticleIds(articleIdsOrId)
+        : getNormalizedArticleIds([articleIdsOrId]);
+    const isMultiArticleSelection = articleIds.length > 1;
+    const modalArticleIds = [...articleIds];
+
+    if (articleIds.length === 0) {
+        return;
+    }
+
+    pendingArticleIds = articleIds;
     modalListSelect.innerHTML = '';
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = 'Liste auswählen';
+    placeholder.textContent = 'Choose list';
     modalListSelect.appendChild(placeholder);
 
     let existingIds = new Set();
     let existingLists = [];
     try {
-        existingLists = await apiFetch(`/api/articles/${articleId}/lists`);
-        existingIds = new Set(existingLists.map(item => String(item.id)));
+        if (articleIds.length === 1) {
+            existingLists = await apiFetch(`/api/articles/${articleIds[0]}/lists`);
+            existingIds = new Set(existingLists.map(item => String(item.id)));
+        } else {
+            const listsPerArticle = await Promise.all(
+                articleIds.map(articleId =>
+                    apiFetch(`/api/articles/${articleId}/lists`).catch(() => []),
+                ),
+            );
+            const seenCounts = new Map();
+            const listById = new Map();
+            listsPerArticle.forEach(rows => {
+                const uniqueIdsPerArticle = new Set();
+                rows.forEach(row => {
+                    const key = String(row.id);
+                    if (uniqueIdsPerArticle.has(key)) {
+                        return;
+                    }
+                    uniqueIdsPerArticle.add(key);
+                    listById.set(key, row);
+                    seenCounts.set(key, (seenCounts.get(key) || 0) + 1);
+                });
+            });
+            const commonListIds = Array.from(seenCounts.entries())
+                .filter(([, count]) => count === articleIds.length)
+                .map(([listId]) => listId);
+            existingIds = new Set(commonListIds);
+            existingLists = commonListIds.map(listId => listById.get(listId)).filter(Boolean);
+        }
     } catch (err) {
         existingIds = new Set();
         existingLists = [];
@@ -515,7 +809,9 @@ async function openListModal(articleId) {
     state.lists.forEach(list => {
         const option = document.createElement('option');
         option.value = list.id;
-        option.textContent = existingIds.has(String(list.id)) ? `${list.name} (bereits)` : list.name;
+        option.textContent = existingIds.has(String(list.id))
+            ? `${list.name} (${isMultiArticleSelection ? 'already in all' : 'already'})`
+            : list.name;
         option.disabled = existingIds.has(String(list.id));
         modalListSelect.appendChild(option);
     });
@@ -535,6 +831,29 @@ async function openListModal(articleId) {
                 text.textContent = item.name;
                 chip.appendChild(dot);
                 chip.appendChild(text);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'modal-chip-remove';
+                removeBtn.textContent = '×';
+                removeBtn.title = `Remove ${item.name}`;
+                removeBtn.setAttribute('aria-label', `Remove ${item.name} from selected article${isMultiArticleSelection ? 's' : ''}`);
+                removeBtn.addEventListener('click', async event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    removeBtn.disabled = true;
+                    try {
+                        await apiFetch(`/api/lists/${item.id}/items/bulk-delete`, {
+                            method: 'POST',
+                            body: JSON.stringify({ articleIds: modalArticleIds }),
+                        });
+                        await openListModal(modalArticleIds);
+                    } catch (err) {
+                        removeBtn.disabled = false;
+                        alert(`Remove from list failed: ${err.message}`);
+                    }
+                });
+                chip.appendChild(removeBtn);
                 modalExistingLists.appendChild(chip);
             });
         }
@@ -545,7 +864,7 @@ async function openListModal(articleId) {
 }
 
 function closeListModal() {
-    pendingArticleId = null;
+    pendingArticleIds = [];
     modalBackdrop.classList.remove('is-open');
     modalBackdrop.setAttribute('aria-hidden', 'true');
 }
@@ -646,6 +965,7 @@ async function loadFeeds() {
         state.feeds = await apiFetch('/api/feeds');
         renderFeeds();
         renderFilterOptions();
+        renderDigestSettings();
     } catch (err) {
         feedsState.textContent = `Fehler: ${err.message}`;
     }
@@ -668,8 +988,11 @@ function renderArticles(articles) {
 
         node.querySelector('.meta-date').textContent = formatDate(article.publishedAt);
 
+        const metaSource = node.querySelector('.meta-source');
         const sourceLogo = node.querySelector('.source-logo');
         const sourceName = node.querySelector('.source-name');
+        const articleFeedId = Number(article.feedId);
+        const hasFeedId = Number.isInteger(articleFeedId) && articleFeedId > 0;
 
         if (article.sourceLogoDataUrl) {
             sourceLogo.src = article.sourceLogoDataUrl;
@@ -679,6 +1002,24 @@ function renderArticles(articles) {
         }
 
         sourceName.textContent = article.sourceName || '—';
+        if (metaSource) {
+            if (hasFeedId || article.sourceName) {
+                metaSource.classList.add('is-clickable');
+                metaSource.disabled = false;
+                metaSource.title = `Filter by ${article.sourceName || 'source'}`;
+                metaSource.addEventListener('click', async event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    await openDashboardWithSourceFilter({
+                        feedId: hasFeedId ? articleFeedId : null,
+                        sourceName: article.sourceName,
+                    });
+                });
+            } else {
+                metaSource.classList.remove('is-clickable');
+                metaSource.disabled = true;
+            }
+        }
 
         node.querySelector('.title').textContent = article.title || 'Ohne Titel';
         node.querySelector('.teaser').textContent = article.teaser || '';
@@ -864,23 +1205,6 @@ function renderDigestClusters(payload) {
                     itemTeaser.textContent = item.teaser;
                     card.appendChild(itemTeaser);
                 }
-
-                const actions = document.createElement('div');
-                actions.className = 'digest-item-actions';
-
-                if (hasUrl) {
-                    const readLink = document.createElement('a');
-                    readLink.className = 'digest-item-read-link digest-item-action';
-                    readLink.href = item.url;
-                    readLink.target = '_blank';
-                    readLink.rel = 'noopener noreferrer';
-                    readLink.textContent = 'read article';
-                    actions.appendChild(readLink);
-                }
-
-                if (actions.childElementCount > 0) {
-                    card.appendChild(actions);
-                }
                 itemsGridEl.appendChild(card);
             });
 
@@ -888,6 +1212,19 @@ function renderDigestClusters(payload) {
             if (clusterCard) {
                 const clusterActions = document.createElement('div');
                 clusterActions.className = 'digest-cluster-actions';
+
+                const clusterAddBtn = document.createElement('button');
+                clusterAddBtn.type = 'button';
+                clusterAddBtn.className = 'btn ghost btn-add digest-cluster-add-btn';
+                clusterAddBtn.textContent = '+';
+                clusterAddBtn.disabled = clusterArticleIds.length === 0;
+                if (!clusterAddBtn.disabled) {
+                    clusterAddBtn.addEventListener('click', async event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        await openListModal(clusterArticleIds);
+                    });
+                }
 
                 const clusterDigestBtn = document.createElement('button');
                 clusterDigestBtn.type = 'button';
@@ -915,6 +1252,7 @@ function renderDigestClusters(payload) {
                     });
                 }
 
+                clusterActions.appendChild(clusterAddBtn);
                 clusterActions.appendChild(clusterDigestBtn);
                 clusterCard.appendChild(clusterActions);
             }
@@ -1086,6 +1424,38 @@ function scrollArticlesToTop() {
     window.scrollTo(0, 0);
 }
 
+function hasDashboardFiltersApplied() {
+    const hasQuery = normalizeSearchQuery(searchInput?.value || '').length > 0;
+    const hasListFilter = Boolean(filterList?.value);
+    const hasSourceFilter = Boolean(filterSource?.value);
+    return hasQuery || hasListFilter || hasSourceFilter;
+}
+
+async function clearDashboardFilters() {
+    if (clearDashboardPromise) {
+        return clearDashboardPromise;
+    }
+
+    clearDashboardPromise = (async () => {
+        if (searchTimer) {
+            clearTimeout(searchTimer);
+            searchTimer = null;
+        }
+
+        searchInput.value = '';
+        filterList.value = '';
+        filterSource.value = '';
+        scrollArticlesToTop();
+        await loadArticles();
+    })();
+
+    try {
+        await clearDashboardPromise;
+    } finally {
+        clearDashboardPromise = null;
+    }
+}
+
 async function searchFromSelection(value) {
     const query = normalizeSearchQuery(value);
     if (!query) {
@@ -1191,14 +1561,14 @@ modalBackdrop.addEventListener('click', event => {
 });
 modalConfirm.addEventListener('click', async () => {
     const listId = modalListSelect.value;
-    if (!listId || !pendingArticleId) {
-        alert('Bitte eine Liste auswählen.');
+    if (!listId || pendingArticleIds.length === 0) {
+        alert('Please choose a list.');
         return;
     }
     try {
-        await apiFetch(`/api/lists/${listId}/items`, {
+        await apiFetch(`/api/lists/${listId}/items/bulk`, {
             method: 'POST',
-            body: JSON.stringify({ articleId: pendingArticleId }),
+            body: JSON.stringify({ articleIds: pendingArticleIds }),
         });
         closeListModal();
     } catch (err) {
@@ -1241,24 +1611,13 @@ if (themeToggleBtn) {
     });
 }
 runFetchBtn.addEventListener('click', async () => {
-    runFetchBtn.disabled = true;
-    runFetchBtn.textContent = 'fetching…';
-
-    try {
-        await apiFetch('/api/fetch/run', { method: 'POST' });
-        articlesNeedsRefresh = true;
-        if (isViewActive('main')) {
-            await loadArticles();
-        }
-        requestDigestRefresh({ force: true });
-        await loadFetchStatus();
-    } catch (err) {
-        alert(`Fetch fehlgeschlagen: ${err.message}`);
-    } finally {
-        runFetchBtn.disabled = false;
-        runFetchBtn.textContent = 'fetch now';
-    }
+    await clearDashboardFilters();
 });
+if (settingsFetchNowBtn) {
+    settingsFetchNowBtn.addEventListener('click', async () => {
+        await runManualFetch(settingsFetchNowBtn);
+    });
+}
 
 if (digestSortToggle && digestSortOptions.length > 0) {
     updateDigestSortUi();
@@ -1289,6 +1648,25 @@ if (digestMarkAllBtn) {
         await markAllVisibleAsDigested();
     });
 }
+if (digestSettingsSaveFeeds) {
+    digestSettingsSaveFeeds.addEventListener('click', async () => {
+        await saveDigestExcludedFeeds();
+    });
+}
+if (digestBlockWordAdd) {
+    digestBlockWordAdd.addEventListener('click', async () => {
+        await addDigestBlockedWord();
+    });
+}
+if (digestBlockWordInput) {
+    digestBlockWordInput.addEventListener('keydown', async event => {
+        if (event.key !== 'Enter') {
+            return;
+        }
+        event.preventDefault();
+        await addDigestBlockedWord();
+    });
+}
 
 searchInput.addEventListener('input', () => {
     if (searchTimer) {
@@ -1315,6 +1693,7 @@ async function boot() {
     applyLayoutState();
     updateStickySubnavScrollState();
     await loadFeeds();
+    await loadDigestSettings();
     await loadLists();
     await loadArticles();
     await loadDailyDigest({ force: true });
@@ -1325,6 +1704,26 @@ async function boot() {
 boot();
 
 window.addEventListener('scroll', updateStickySubnavScrollState, { passive: true });
+window.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') {
+        return;
+    }
+    const isListModalOpen = Boolean(modalBackdrop?.classList.contains('is-open'));
+    if (isListModalOpen) {
+        event.preventDefault();
+        closeListModal();
+        return;
+    }
+    if (!isViewActive('main')) {
+        return;
+    }
+    if (!hasDashboardFiltersApplied()) {
+        return;
+    }
+
+    event.preventDefault();
+    void clearDashboardFilters();
+});
 
 function setupSse() {
     if (sse) {
@@ -1356,6 +1755,7 @@ function setupSse() {
             }
             if (eventName === 'feeds.updated') {
                 loadFeeds();
+                loadDigestSettings({ silent: true });
             }
             if (eventName === 'lists.updated') {
                 loadLists();
@@ -1365,6 +1765,10 @@ function setupSse() {
                 if (isViewActive('main')) {
                     loadArticles();
                 }
+            }
+            if (eventName === 'digest.settings.updated') {
+                loadDigestSettings({ silent: true });
+                requestDigestRefresh({ force: true });
             }
         } catch {
             return;

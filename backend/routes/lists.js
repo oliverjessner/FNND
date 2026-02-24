@@ -4,6 +4,21 @@ import { publish } from '../services/events.js';
 
 const router = express.Router();
 
+function normalizeArticleIds(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const ids = new Set();
+    value.forEach(id => {
+        const normalized = Number(id);
+        if (Number.isInteger(normalized) && normalized > 0) {
+            ids.add(normalized);
+        }
+    });
+    return Array.from(ids);
+}
+
 router.get('/', async (_, res) => {
     const lists = await all('SELECT * FROM lists ORDER BY id DESC');
     return res.json(lists);
@@ -72,7 +87,90 @@ router.post('/:id/items', async ({ params: { id }, body: { articleId } }, res) =
     );
 
     publish('lists.items.updated', { listId: id, articleId });
-    return es.status(201).json({ ok: true });
+    return res.status(201).json({ ok: true });
+});
+
+router.post('/:id/items/bulk', async ({ params: { id }, body: { articleIds } }, res) => {
+    const normalizedArticleIds = normalizeArticleIds(articleIds);
+
+    if (normalizedArticleIds.length === 0) {
+        return res.status(400).json({ error: 'articleIds must contain at least one valid article id' });
+    }
+
+    await run('BEGIN IMMEDIATE');
+    let inserted = 0;
+    try {
+        for (const articleId of normalizedArticleIds) {
+            const result = await run(
+                `INSERT OR IGNORE INTO list_items (listId, articleId, createdAt)
+                 VALUES (?, ?, datetime('now'))`,
+                [id, articleId],
+            );
+            inserted += Number(result?.changes || 0);
+        }
+        await run('COMMIT');
+    } catch (err) {
+        try {
+            await run('ROLLBACK');
+        } catch {
+            // ignore rollback error to preserve original failure
+        }
+        throw err;
+    }
+
+    publish('lists.items.updated', {
+        listId: id,
+        articleIds: normalizedArticleIds,
+        total: normalizedArticleIds.length,
+        inserted,
+        batch: true,
+    });
+
+    return res.status(201).json({
+        ok: true,
+        total: normalizedArticleIds.length,
+        inserted,
+    });
+});
+
+router.post('/:id/items/bulk-delete', async ({ params: { id }, body: { articleIds } }, res) => {
+    const normalizedArticleIds = normalizeArticleIds(articleIds);
+
+    if (normalizedArticleIds.length === 0) {
+        return res.status(400).json({ error: 'articleIds must contain at least one valid article id' });
+    }
+
+    await run('BEGIN IMMEDIATE');
+    let removed = 0;
+    try {
+        for (const articleId of normalizedArticleIds) {
+            const result = await run('DELETE FROM list_items WHERE listId = ? AND articleId = ?', [id, articleId]);
+            removed += Number(result?.changes || 0);
+        }
+        await run('COMMIT');
+    } catch (err) {
+        try {
+            await run('ROLLBACK');
+        } catch {
+            // ignore rollback error to preserve original failure
+        }
+        throw err;
+    }
+
+    publish('lists.items.updated', {
+        listId: id,
+        articleIds: normalizedArticleIds,
+        total: normalizedArticleIds.length,
+        removed,
+        batch: true,
+        action: 'removed',
+    });
+
+    return res.json({
+        ok: true,
+        total: normalizedArticleIds.length,
+        removed,
+    });
 });
 
 router.delete('/:id/items/:articleId', async ({ params: { id, articleId } }, res) => {

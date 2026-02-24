@@ -13,7 +13,31 @@ const DIGEST_TOKEN_OVERLAP_THRESHOLD = readNumberEnv('DIGEST_TOKEN_OVERLAP', 0.2
 const DIGEST_STRICT_MIN_TOKEN_OVERLAP = readNumberEnv('DIGEST_STRICT_MIN_OVERLAP', 0.25);
 const DIGEST_STRICT_ANCHOR_MIN_MATCH = readNumberEnv('DIGEST_STRICT_ANCHOR_MIN_MATCH', 1);
 const DIGEST_TITLE_ANCHOR_MIN_MATCH = readNumberEnv('DIGEST_TITLE_ANCHOR_MIN_MATCH', 2);
+const DIGEST_RELAXED_ANCHOR_MIN_MATCH = readNumberEnv('DIGEST_RELAXED_ANCHOR_MIN_MATCH', 2);
+const DIGEST_RELAXED_SIMILARITY_THRESHOLD = readNumberEnv('DIGEST_RELAXED_SIMILARITY', 0.4);
+const DIGEST_RELAXED_TOKEN_OVERLAP_THRESHOLD = readNumberEnv('DIGEST_RELAXED_TOKEN_OVERLAP', 0.2);
+const DIGEST_RELAXED_SPECIFIC_ANCHOR_MIN_LENGTH = readNumberEnv('DIGEST_RELAXED_SPECIFIC_ANCHOR_MIN_LENGTH', 7);
 const DIGEST_SOFT_MATCH_MAX_HOURS = readNumberEnv('DIGEST_SOFT_MAX_HOURS', 18);
+const DIGEST_TOKEN_VARIANT_SUFFIXES = [
+    'lichkeiten',
+    'lichkeit',
+    'ischen',
+    'ischer',
+    'isches',
+    'ischem',
+    'ische',
+    'ungen',
+    'ung',
+    'ern',
+    'em',
+    'en',
+    'er',
+    'es',
+    'e',
+    'n',
+    's',
+];
+const DIGEST_SHORT_KEYWORD_TOKENS = new Set(['ai', 'ki']);
 const DIGEST_TITLE_ANCHOR_STOPWORDS = new Set([
     'a',
     'an',
@@ -151,9 +175,9 @@ export function mapArticleRow(row) {
 
 export function getTodayRangeIso() {
     const start = new Date();
-    const end = new Date(start);
 
     start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
     end.setDate(end.getDate() + 1);
 
     return { startIso: start.toISOString(), endIso: end.toISOString() };
@@ -190,7 +214,7 @@ function tokenizeFingerprintText(value, { keepStopwords = false } = {}) {
     return String(value || '')
         .split(' ')
         .map(token => token.trim())
-        .filter(token => token.length > 2)
+        .filter(token => token.length > 2 || DIGEST_SHORT_KEYWORD_TOKENS.has(token))
         .filter(token => !/^\d+$/.test(token))
         .filter(token => keepStopwords || !DIGEST_TITLE_ANCHOR_STOPWORDS.has(token));
 }
@@ -206,6 +230,39 @@ function buildSimhashTokens(tokens) {
     });
 
     return Array.from(tokenWeightMap, ([text, weight]) => ({ text, weight }));
+}
+
+function getTokenStemVariant(token) {
+    if (typeof token !== 'string' || token.length < 6) {
+        return null;
+    }
+
+    for (const suffix of DIGEST_TOKEN_VARIANT_SUFFIXES) {
+        if (!token.endsWith(suffix)) {
+            continue;
+        }
+        const stem = token.slice(0, -suffix.length);
+        if (stem.length >= 4) {
+            return stem;
+        }
+    }
+
+    return null;
+}
+
+function buildTokenMatchSet(tokens) {
+    const set = new Set();
+    tokens.forEach(token => {
+        if (!token) {
+            return;
+        }
+        set.add(token);
+        const stem = getTokenStemVariant(token);
+        if (stem) {
+            set.add(stem);
+        }
+    });
+    return set;
 }
 
 function toTimestampMs(value) {
@@ -265,6 +322,20 @@ function getSetIntersectionCount(leftSet, rightSet) {
     return intersection;
 }
 
+function hasSpecificAnchorOverlap(leftSet, rightSet, minLength = DIGEST_RELAXED_SPECIFIC_ANCHOR_MIN_LENGTH) {
+    if (!leftSet || !rightSet || leftSet.size === 0 || rightSet.size === 0) {
+        return false;
+    }
+
+    for (const token of leftSet) {
+        if (token.length >= minLength && rightSet.has(token)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function isAnchorToken(token) {
     if (typeof token !== 'string') {
         return false;
@@ -287,6 +358,7 @@ function isSoftDigestMatchAllowed(
     similarityScore,
     overlapScore,
     titleAnchorOverlapCount,
+    hasRelaxedAnchorMatch = false,
 ) {
     if (similarityScore >= DIGEST_SIMILARITY_THRESHOLD_STRICT) {
         return (
@@ -294,10 +366,10 @@ function isSoftDigestMatchAllowed(
         );
     }
 
-    if (overlapScore < DIGEST_TOKEN_OVERLAP_THRESHOLD) {
+    if (!hasRelaxedAnchorMatch && overlapScore < DIGEST_TOKEN_OVERLAP_THRESHOLD) {
         return false;
     }
-    if (titleAnchorOverlapCount < DIGEST_TITLE_ANCHOR_MIN_MATCH) {
+    if (!hasRelaxedAnchorMatch && titleAnchorOverlapCount < DIGEST_TITLE_ANCHOR_MIN_MATCH) {
         return false;
     }
 
@@ -317,13 +389,16 @@ function createDigestFingerprint(article) {
     const titleWords = tokenizeFingerprintText(normalizedTitle);
     const effectiveTitleWords =
         titleWords.length > 0 ? titleWords : tokenizeFingerprintText(normalizedTitle, { keepStopwords: true });
-    const tokenSet = new Set(effectiveWords);
-    const titleAnchorSet = new Set(titleWords.filter(isAnchorToken));
+    const tokenSet = buildTokenMatchSet(effectiveWords);
+    const titleAnchorSet = buildTokenMatchSet(titleWords.filter(isAnchorToken));
     const hash = effectiveWords.length > 0 ? simhash(buildSimhashTokens(effectiveWords)) : null;
     return {
         hash,
         tokenSet,
-        titleAnchorSet: titleAnchorSet.size > 0 ? titleAnchorSet : new Set(effectiveTitleWords.filter(isAnchorToken)),
+        titleAnchorSet:
+            titleAnchorSet.size > 0
+                ? titleAnchorSet
+                : buildTokenMatchSet(effectiveTitleWords.filter(isAnchorToken)),
         publishedAtMs: toTimestampMs(article.publishedAt),
         canonicalUrl: canonicalizeArticleUrl(article.url),
     };
@@ -355,15 +430,20 @@ export function clusterDigestArticles(articles) {
                     }
 
                     const score = similarity(fingerprint.hash, member.fingerprint.hash);
-                    if (score < DIGEST_SIMILARITY_THRESHOLD_SOFT) {
-                        continue;
-                    }
-
                     const overlapScore = getTokenOverlapScore(fingerprint.tokenSet, member.fingerprint.tokenSet);
                     const titleAnchorOverlapCount = getSetIntersectionCount(
                         fingerprint.titleAnchorSet,
                         member.fingerprint.titleAnchorSet,
                     );
+                    const relaxedAnchorMatch =
+                        score >= DIGEST_RELAXED_SIMILARITY_THRESHOLD &&
+                        overlapScore >= DIGEST_RELAXED_TOKEN_OVERLAP_THRESHOLD &&
+                        titleAnchorOverlapCount >= DIGEST_RELAXED_ANCHOR_MIN_MATCH &&
+                        hasSpecificAnchorOverlap(fingerprint.titleAnchorSet, member.fingerprint.titleAnchorSet);
+
+                    if (score < DIGEST_SIMILARITY_THRESHOLD_SOFT && !relaxedAnchorMatch) {
+                        continue;
+                    }
 
                     if (
                         !isSoftDigestMatchAllowed(
@@ -372,6 +452,7 @@ export function clusterDigestArticles(articles) {
                             score,
                             overlapScore,
                             titleAnchorOverlapCount,
+                            relaxedAnchorMatch,
                         )
                     ) {
                         continue;

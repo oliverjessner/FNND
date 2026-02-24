@@ -48,3 +48,15 @@ CREATE TABLE IF NOT EXISTS list_items (
 
 CREATE INDEX IF NOT EXISTS idx_list_items_listId ON list_items (listId);
 CREATE INDEX IF NOT EXISTS idx_list_items_articleId ON list_items (articleId);
+
+CREATE TABLE IF NOT EXISTS digest_excluded_feeds (
+  feedId INTEGER PRIMARY KEY,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (feedId) REFERENCES feeds(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS digest_blocked_words (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  word TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);

@@ -86,6 +86,20 @@ router.get('/daily-digest', async (_req, res) => {
           AND COALESCE(dailyDigested, 0) = 0
           AND publishedAtParsed >= datetime(?)
           AND publishedAtParsed < datetime(?)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM digest_excluded_feeds
+              WHERE digest_excluded_feeds.feedId = normalized_articles.feedId
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM digest_blocked_words
+              WHERE length(trim(digest_blocked_words.word)) > 0
+                AND instr(
+                    lower(coalesce(normalized_articles.title, '') || ' ' || coalesce(normalized_articles.teaser, '')),
+                    lower(trim(digest_blocked_words.word))
+                ) > 0
+          )
         ORDER BY publishedAtParsed DESC, id DESC
         `,
         [startIso, endIso],
