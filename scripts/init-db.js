@@ -3,12 +3,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     all,
+    ensureArticleContentColumn,
     ensureArticleDailyDigestedColumn,
     ensureFeedLogoColumns,
     ensureListColorColumn,
+    ensureTopicsTables,
     initSchema,
     run,
 } from '../backend/database/datenbank.js';
+import { ensureTopicDefinitionsInitialized } from '../backend/services/topics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,7 +42,10 @@ export async function initDatabase() {
     await initSchema();
     await ensureFeedLogoColumns();
     await ensureListColorColumn();
+    await ensureArticleContentColumn();
     await ensureArticleDailyDigestedColumn();
+    await ensureTopicsTables();
+    await ensureTopicDefinitionsInitialized();
     await seedFeeds();
 }
 

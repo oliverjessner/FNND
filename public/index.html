@@ -97,6 +97,7 @@
                         </button>
                         <button class="settings-tab" data-settings="lists" type="button">Lists</button>
                         <button class="settings-tab" data-settings="digest" type="button">Daily Digest</button>
+                        <button class="settings-tab" data-settings="topics" type="button">Topics</button>
                         <button class="settings-tab" data-settings="cosmetics" type="button">Cosmetics</button>
                     </div>
                 </div>
@@ -201,6 +202,81 @@
                             <div id="digest-block-words-state" class="form-status">Lädt…</div>
                             <div id="digest-block-words-list" class="settings-digest-block-list"></div>
                         </section>
+                    </div>
+                </div>
+
+                <div id="settings-topics" class="settings-panel">
+                    <div class="settings-topics-left">
+                        <form id="topic-form" class="card form">
+                            <div class="form-row">
+                                <label>Slug</label>
+                                <input type="text" id="topic-slug" placeholder="e. g. ki" required />
+                            </div>
+                            <div class="form-row">
+                                <label>Label</label>
+                                <input type="text" id="topic-label" placeholder="e. g. KI" required />
+                            </div>
+                            <div class="form-row">
+                                <label>Strong keywords (comma or newline)</label>
+                                <textarea
+                                    id="topic-strong"
+                                    class="textarea"
+                                    rows="3"
+                                    placeholder="chatgpt, openai, llm"
+                                ></textarea>
+                            </div>
+                            <div class="form-row">
+                                <label>Medium keywords (comma or newline)</label>
+                                <textarea
+                                    id="topic-medium"
+                                    class="textarea"
+                                    rows="3"
+                                    placeholder="copilot, prompting, gemini"
+                                ></textarea>
+                            </div>
+                            <div class="form-row">
+                                <label>Weak keywords (comma or newline)</label>
+                                <textarea
+                                    id="topic-weak"
+                                    class="textarea"
+                                    rows="2"
+                                    placeholder="modell, inferenz"
+                                ></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn success" id="topic-submit">save topic</button>
+                                <button type="button" class="btn ghost" id="topic-cancel">cancel</button>
+                            </div>
+                            <div id="topic-form-status" class="form-status"></div>
+                        </form>
+
+                        <section class="card settings-topics-json-card">
+                            <h3 class="title">Rules JSON</h3>
+                            <p class="teaser">Validate and save topic rules before they are applied.</p>
+                            <div class="form-row">
+                                <label for="topics-json-input">topics.rules.json</label>
+                                <textarea id="topics-json-input" class="textarea settings-topics-json-input" rows="13"></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn" id="topics-json-validate">validate json</button>
+                                <button type="button" class="btn success" id="topics-json-save">save json</button>
+                            </div>
+                            <div id="topics-json-status" class="form-status"></div>
+                        </section>
+
+                        <section class="card settings-topics-reprocess-card">
+                            <h3 class="title">Reprocess Articles</h3>
+                            <p class="teaser">Re-run topic classification for all existing articles.</p>
+                            <div class="form-actions">
+                                <button type="button" class="btn danger" id="topics-reprocess">re-run classification</button>
+                            </div>
+                            <div id="topics-reprocess-status" class="form-status"></div>
+                        </section>
+                    </div>
+
+                    <div class="settings-topics-content">
+                        <div id="topics-state" class="state">Lädt…</div>
+                        <div id="topics-list" class="list"></div>
                     </div>
                 </div>
 

@@ -1,6 +1,7 @@
 import Parser from 'rss-parser';
 import crypto from 'node:crypto';
 import { all, run } from '../database/datenbank.js';
+import { classifyAndPersistArticleTopics } from './topics.js';
 import { logInfo, logWarn, logError } from '../utils/logger.js';
 import { publish } from './events.js';
 import { decodeBuffer, detectEncoding } from '../utils/encoding.js';
@@ -32,6 +33,17 @@ function normalizeTeaser(text, maxLen = 220) {
         .trim();
     if (cleaned.length <= maxLen) return cleaned;
     return `${cleaned.slice(0, maxLen - 1)}…`;
+}
+
+function normalizeContent(text, maxLen = 10000) {
+    if (!text) return null;
+    const cleaned = String(text)
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!cleaned) return null;
+    if (cleaned.length <= maxLen) return cleaned;
+    return cleaned.slice(0, maxLen);
 }
 
 function hashUrl(url) {
@@ -86,6 +98,9 @@ export async function updateAllFeeds() {
                     const teaser = normalizeTeaser(
                         item.contentSnippet || item.summary || item.content || item.description,
                     );
+                    const content = normalizeContent(
+                        item['content:encoded'] || item.content || item.summary || item.description,
+                    );
 
                     if (!guidOrHash) {
                         continue;
@@ -94,13 +109,28 @@ export async function updateAllFeeds() {
                     try {
                         const result = await run(
                             `INSERT OR IGNORE INTO articles
-              (feedId, title, teaser, url, publishedAt, guidOrHash)
-              VALUES (?, ?, ?, ?, ?, ?)`,
-                            [feed.id, item.title || null, teaser, url, publishedAt, guidOrHash],
+              (feedId, title, teaser, content, url, publishedAt, guidOrHash)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                            [feed.id, item.title || null, teaser, content, url, publishedAt, guidOrHash],
                         );
 
                         if (result.changes > 0) {
                             newCount += 1;
+
+                            try {
+                                await classifyAndPersistArticleTopics({
+                                    id: result.lastID,
+                                    title: item.title || null,
+                                    teaser,
+                                    content,
+                                });
+                            } catch (classificationError) {
+                                logWarn('Topic classification failed', {
+                                    articleId: result.lastID,
+                                    feedId: feed.id,
+                                    error: classificationError.message,
+                                });
+                            }
                         }
                     } catch (err) {
                         return logWarn('Article insert failed', {

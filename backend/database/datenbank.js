@@ -77,4 +77,43 @@ export async function ensureArticleDailyDigestedColumn() {
     await run('UPDATE articles SET dailyDigested = 0 WHERE dailyDigested IS NULL');
 }
 
+export async function ensureArticleContentColumn() {
+    const columns = await all('PRAGMA table_info(articles)');
+    const hasContent = columns.some(col => col.name === 'content');
+
+    if (!hasContent) {
+        await run('ALTER TABLE articles ADD COLUMN content TEXT');
+    }
+}
+
+export async function ensureTopicsTables() {
+    await run(`
+        CREATE TABLE IF NOT EXISTS topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            label TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    `);
+
+    await run(`
+        CREATE TABLE IF NOT EXISTS article_topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id INTEGER NOT NULL,
+            topic_slug TEXT NOT NULL,
+            score REAL NOT NULL,
+            matched_terms_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (article_id, topic_slug),
+            FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+            FOREIGN KEY (topic_slug) REFERENCES topics(slug) ON DELETE CASCADE
+        )
+    `);
+
+    await run('CREATE INDEX IF NOT EXISTS idx_article_topics_article_id ON article_topics (article_id)');
+    await run('CREATE INDEX IF NOT EXISTS idx_article_topics_topic_slug ON article_topics (topic_slug)');
+}
+
 export default db;

@@ -5,6 +5,7 @@ import feedsRouter from './routes/feeds.js';
 import articlesRouter from './routes/articles.js';
 import listsRouter from './routes/lists.js';
 import digestSettingsRouter from './routes/digest-settings.js';
+import topicsRouter from './routes/topics.js';
 import webhookRouter from './routes/webhook.js';
 import { startScheduler } from './services/scheduler.js';
 import { getLastFetchStatus, updateAllFeeds } from './services/fetcher.js';
@@ -54,6 +55,7 @@ app.use('/api/feeds', feedsRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/lists', listsRouter);
 app.use('/api/digest-settings', digestSettingsRouter);
+app.use('/api/topics', topicsRouter);
 app.use('/api/webhook', webhookRouter);
 
 app.post('/api/fetch/run', async (req, res, next) => {

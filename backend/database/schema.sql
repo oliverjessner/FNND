@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS articles (
   feedId INTEGER NOT NULL,
   title TEXT,
   teaser TEXT,
+  content TEXT,
   url TEXT UNIQUE,
   publishedAt TEXT,
   guidOrHash TEXT UNIQUE,
@@ -60,3 +61,27 @@ CREATE TABLE IF NOT EXISTS digest_blocked_words (
   word TEXT NOT NULL UNIQUE COLLATE NOCASE,
   createdAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS topics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS article_topics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id INTEGER NOT NULL,
+  topic_slug TEXT NOT NULL,
+  score REAL NOT NULL,
+  matched_terms_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (article_id, topic_slug),
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+  FOREIGN KEY (topic_slug) REFERENCES topics(slug) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_article_topics_article_id ON article_topics (article_id);
+CREATE INDEX IF NOT EXISTS idx_article_topics_topic_slug ON article_topics (topic_slug);

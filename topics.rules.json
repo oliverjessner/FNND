@@ -1,0 +1,47 @@
+{
+  "ki": {
+    "label": "KI",
+    "strong": [
+      "künstliche intelligenz",
+      "artificial intelligence",
+      "chatgpt",
+      "openai",
+      "claude",
+      "llm",
+      "generative ai"
+    ],
+    "medium": [
+      "copilot",
+      "prompting",
+      "gemini",
+      "anthropic",
+      "embedding"
+    ],
+    "weak": [
+      "modell",
+      "inferenz",
+      "fine tuning"
+    ]
+  },
+  "startup": {
+    "label": "Startup",
+    "strong": [
+      "startup",
+      "venture capital",
+      "seed-runde",
+      "series a",
+      "cap table"
+    ],
+    "medium": [
+      "founder",
+      "gründung",
+      "runway",
+      "pitch deck",
+      "business angel"
+    ],
+    "weak": [
+      "investment",
+      "finanzierung"
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 const state = Object.seal({
     feeds: [],
     lists: [],
+    topics: [],
     digestSettings: {
         excludedFeedIds: [],
         blockedWords: [],
@@ -57,6 +58,23 @@ const listCancel = document.getElementById('list-cancel');
 const listFormStatus = document.getElementById('list-form-status');
 const listsState = document.getElementById('lists-state');
 const listsList = document.getElementById('lists-list');
+const topicsState = document.getElementById('topics-state');
+const topicsList = document.getElementById('topics-list');
+const topicForm = document.getElementById('topic-form');
+const topicSlug = document.getElementById('topic-slug');
+const topicLabel = document.getElementById('topic-label');
+const topicStrong = document.getElementById('topic-strong');
+const topicMedium = document.getElementById('topic-medium');
+const topicWeak = document.getElementById('topic-weak');
+const topicSubmit = document.getElementById('topic-submit');
+const topicCancel = document.getElementById('topic-cancel');
+const topicFormStatus = document.getElementById('topic-form-status');
+const topicsJsonInput = document.getElementById('topics-json-input');
+const topicsJsonValidateBtn = document.getElementById('topics-json-validate');
+const topicsJsonSaveBtn = document.getElementById('topics-json-save');
+const topicsJsonStatus = document.getElementById('topics-json-status');
+const topicsReprocessBtn = document.getElementById('topics-reprocess');
+const topicsReprocessStatus = document.getElementById('topics-reprocess-status');
 const settingsTabs = document.querySelectorAll('.settings-tab');
 const settingsPanels = document.querySelectorAll('.settings-panel');
 const settingsTabsWrap = document.querySelector('.settings-tabs-wrap');
@@ -74,6 +92,7 @@ let loadingStartedAt = 0;
 let isListLayout = localStorage.getItem(LAYOUT_KEY) === 'list';
 let searchTimer = null;
 let listEditingId = null;
+let topicEditingSlug = null;
 let sse = null;
 let digestSortDirection = localStorage.getItem(DIGEST_SORT_KEY) === 'asc' ? 'asc' : 'desc';
 let isDarkTheme = localStorage.getItem(THEME_KEY) === 'dark';
@@ -635,6 +654,278 @@ async function addDigestBlockedWord() {
     } finally {
         digestBlockWordAdd.disabled = false;
         digestBlockWordAdd.textContent = previousLabel;
+    }
+}
+
+function parseTopicKeywordsInput(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map(entry => String(entry || '').trim())
+            .filter(Boolean);
+    }
+
+    return String(value || '')
+        .split(/[\n,]/)
+        .map(entry => entry.trim())
+        .filter(Boolean);
+}
+
+function formatTopicKeywordsInput(value) {
+    if (!Array.isArray(value) || value.length === 0) {
+        return '';
+    }
+    return value.join('\n');
+}
+
+function getTopicFormPayload() {
+    return {
+        slug: String(topicSlug?.value || '').trim(),
+        label: String(topicLabel?.value || '').trim(),
+        strong: parseTopicKeywordsInput(topicStrong?.value || ''),
+        medium: parseTopicKeywordsInput(topicMedium?.value || ''),
+        weak: parseTopicKeywordsInput(topicWeak?.value || ''),
+    };
+}
+
+function resetTopicForm() {
+    topicEditingSlug = null;
+    if (topicSlug) topicSlug.value = '';
+    if (topicLabel) topicLabel.value = '';
+    if (topicStrong) topicStrong.value = '';
+    if (topicMedium) topicMedium.value = '';
+    if (topicWeak) topicWeak.value = '';
+    if (topicSubmit) topicSubmit.textContent = 'save topic';
+    setStatus(topicFormStatus, '');
+}
+
+function startTopicEdit(topic) {
+    topicEditingSlug = topic.slug;
+    if (topicSlug) topicSlug.value = topic.slug || '';
+    if (topicLabel) topicLabel.value = topic.label || '';
+    if (topicStrong) topicStrong.value = formatTopicKeywordsInput(topic.strong);
+    if (topicMedium) topicMedium.value = formatTopicKeywordsInput(topic.medium);
+    if (topicWeak) topicWeak.value = formatTopicKeywordsInput(topic.weak);
+    if (topicSubmit) topicSubmit.textContent = 'save changes';
+    setStatus(topicFormStatus, `Editing topic: ${topic.slug}`);
+}
+
+function renderTopics() {
+    if (!topicsList || !topicsState) {
+        return;
+    }
+
+    topicsList.innerHTML = '';
+
+    if (!Array.isArray(state.topics) || state.topics.length === 0) {
+        topicsState.textContent = 'No topics configured yet.';
+        topicsState.style.display = 'block';
+        return;
+    }
+
+    topicsState.style.display = 'none';
+
+    state.topics.forEach(topic => {
+        const item = document.createElement('div');
+        item.className = 'list-item settings-topic-item';
+
+        const content = document.createElement('div');
+        content.className = 'settings-topic-item-main';
+
+        const title = document.createElement('div');
+        title.className = 'settings-topic-item-title';
+
+        const label = document.createElement('span');
+        label.textContent = topic.label || topic.slug;
+
+        const slug = document.createElement('span');
+        slug.className = 'settings-topic-item-slug';
+        slug.textContent = topic.slug;
+
+        title.appendChild(label);
+        title.appendChild(slug);
+
+        const meta = document.createElement('div');
+        meta.className = 'settings-topic-item-meta';
+        meta.textContent = `strong: ${(topic.strong || []).length} · medium: ${(topic.medium || []).length} · weak: ${(topic.weak || []).length}`;
+
+        content.appendChild(title);
+        content.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'list-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn ghost';
+        editBtn.textContent = 'edit';
+        editBtn.addEventListener('click', () => startTopicEdit(topic));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn danger';
+        deleteBtn.textContent = 'remove';
+        deleteBtn.addEventListener('click', async () => {
+            if (!confirm(`Delete topic \"${topic.label || topic.slug}\"?`)) {
+                return;
+            }
+            try {
+                await apiFetch(`/api/topics/${encodeURIComponent(topic.slug)}`, { method: 'DELETE' });
+                if (topicEditingSlug === topic.slug) {
+                    resetTopicForm();
+                }
+                await loadTopics();
+                await loadTopicRulesJson();
+            } catch (err) {
+                setStatus(topicsState, `Error: ${err.message}`);
+                topicsState.style.display = 'block';
+            }
+        });
+
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+
+        item.appendChild(content);
+        item.appendChild(actions);
+        topicsList.appendChild(item);
+    });
+}
+
+async function loadTopics() {
+    if (!topicsState) {
+        return;
+    }
+    topicsState.style.display = 'block';
+    topicsState.textContent = 'Loading…';
+    try {
+        const payload = await apiFetch('/api/topics');
+        state.topics = Array.isArray(payload?.topics) ? payload.topics : [];
+        renderTopics();
+    } catch (err) {
+        topicsState.textContent = `Error: ${err.message}`;
+    }
+}
+
+async function loadTopicRulesJson() {
+    if (!topicsJsonInput) {
+        return;
+    }
+    try {
+        const payload = await apiFetch('/api/topics/rules');
+        topicsJsonInput.value = payload?.raw || JSON.stringify(payload?.rules || {}, null, 2);
+        setStatus(topicsJsonStatus, '');
+    } catch (err) {
+        setStatus(topicsJsonStatus, `Error: ${err.message}`);
+    }
+}
+
+async function validateTopicRulesJson() {
+    if (!topicsJsonInput || !topicsJsonValidateBtn) {
+        return;
+    }
+    const previousLabel = topicsJsonValidateBtn.textContent;
+    topicsJsonValidateBtn.disabled = true;
+    topicsJsonValidateBtn.textContent = 'validating…';
+    setStatus(topicsJsonStatus, 'Validating…');
+
+    try {
+        const payload = await apiFetch('/api/topics/validate', {
+            method: 'POST',
+            body: JSON.stringify({ json: topicsJsonInput.value }),
+        });
+        setStatus(topicsJsonStatus, `Valid (${payload.topicCount} topic${payload.topicCount === 1 ? '' : 's'})`);
+    } catch (err) {
+        setStatus(topicsJsonStatus, `Invalid JSON: ${err.message}`);
+    } finally {
+        topicsJsonValidateBtn.disabled = false;
+        topicsJsonValidateBtn.textContent = previousLabel;
+    }
+}
+
+async function saveTopicRulesJson() {
+    if (!topicsJsonInput || !topicsJsonSaveBtn) {
+        return;
+    }
+    const previousLabel = topicsJsonSaveBtn.textContent;
+    topicsJsonSaveBtn.disabled = true;
+    topicsJsonSaveBtn.textContent = 'saving…';
+    setStatus(topicsJsonStatus, 'Saving…');
+
+    try {
+        const payload = await apiFetch('/api/topics/rules', {
+            method: 'PUT',
+            body: JSON.stringify({ json: topicsJsonInput.value }),
+        });
+        topicsJsonInput.value = payload?.raw || topicsJsonInput.value;
+        setStatus(topicsJsonStatus, `Saved (${(payload?.topics || []).length} topics)`);
+        await loadTopics();
+        resetTopicForm();
+    } catch (err) {
+        setStatus(topicsJsonStatus, `Error: ${err.message}`);
+    } finally {
+        topicsJsonSaveBtn.disabled = false;
+        topicsJsonSaveBtn.textContent = previousLabel;
+    }
+}
+
+async function submitTopicForm(event) {
+    event.preventDefault();
+    if (!topicForm || !topicSubmit) {
+        return;
+    }
+
+    const payload = getTopicFormPayload();
+    if (!payload.slug || !payload.label) {
+        setStatus(topicFormStatus, 'Slug and label are required.');
+        return;
+    }
+
+    topicSubmit.disabled = true;
+    setStatus(topicFormStatus, 'Saving…');
+
+    try {
+        if (topicEditingSlug) {
+            await apiFetch(`/api/topics/${encodeURIComponent(topicEditingSlug)}`, {
+                method: 'PUT',
+                body: JSON.stringify(payload),
+            });
+        } else {
+            await apiFetch('/api/topics', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+        }
+
+        resetTopicForm();
+        await loadTopics();
+        await loadTopicRulesJson();
+    } catch (err) {
+        setStatus(topicFormStatus, `Error: ${err.message}`);
+    } finally {
+        topicSubmit.disabled = false;
+    }
+}
+
+async function reprocessTopicsForAllArticles() {
+    if (!topicsReprocessBtn) {
+        return;
+    }
+
+    const previousLabel = topicsReprocessBtn.textContent;
+    topicsReprocessBtn.disabled = true;
+    topicsReprocessBtn.textContent = 'running…';
+    setStatus(topicsReprocessStatus, 'Reprocessing…');
+
+    try {
+        const result = await apiFetch('/api/topics/reprocess', { method: 'POST' });
+        setStatus(
+            topicsReprocessStatus,
+            `Done: ${result.processed} processed · ${result.assignedArticles} with topics · ${result.topicAssignments} assignments`,
+        );
+    } catch (err) {
+        setStatus(topicsReprocessStatus, `Error: ${err.message}`);
+    } finally {
+        topicsReprocessBtn.disabled = false;
+        topicsReprocessBtn.textContent = previousLabel;
     }
 }
 
@@ -1552,6 +1843,28 @@ listForm.addEventListener('submit', async event => {
 
 listCancel.addEventListener('click', () => resetListForm());
 
+if (topicForm) {
+    topicForm.addEventListener('submit', submitTopicForm);
+}
+if (topicCancel) {
+    topicCancel.addEventListener('click', () => resetTopicForm());
+}
+if (topicsJsonValidateBtn) {
+    topicsJsonValidateBtn.addEventListener('click', async () => {
+        await validateTopicRulesJson();
+    });
+}
+if (topicsJsonSaveBtn) {
+    topicsJsonSaveBtn.addEventListener('click', async () => {
+        await saveTopicRulesJson();
+    });
+}
+if (topicsReprocessBtn) {
+    topicsReprocessBtn.addEventListener('click', async () => {
+        await reprocessTopicsForAllArticles();
+    });
+}
+
 modalClose.addEventListener('click', () => closeListModal());
 modalCancel.addEventListener('click', () => closeListModal());
 modalBackdrop.addEventListener('click', event => {
@@ -1695,6 +2008,8 @@ async function boot() {
     await loadFeeds();
     await loadDigestSettings();
     await loadLists();
+    await loadTopics();
+    await loadTopicRulesJson();
     await loadArticles();
     await loadDailyDigest({ force: true });
     await loadFetchStatus();
@@ -1769,6 +2084,13 @@ function setupSse() {
             if (eventName === 'digest.settings.updated') {
                 loadDigestSettings({ silent: true });
                 requestDigestRefresh({ force: true });
+            }
+            if (eventName === 'topics.updated') {
+                loadTopics();
+                loadTopicRulesJson();
+            }
+            if (eventName === 'topics.reprocessed') {
+                loadTopics();
             }
         } catch {
             return;

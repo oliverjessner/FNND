@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { get, run } from '../database/datenbank.js';
 import { publish } from '../services/events.js';
+import { classifyAndPersistArticleTopics } from '../services/topics.js';
+import { logWarn } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -55,6 +57,27 @@ function normalizeTeaser(value, maxLen = 220) {
     }
 
     return `${cleaned.slice(0, maxLen - 1)}…`;
+}
+
+function normalizeContent(value, maxLen = 10000) {
+    if (!value) {
+        return null;
+    }
+
+    const cleaned = String(value)
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!cleaned) {
+        return null;
+    }
+
+    if (cleaned.length <= maxLen) {
+        return cleaned;
+    }
+
+    return cleaned.slice(0, maxLen);
 }
 
 function createGuidOrHash(item, feedId, fallbackPublishedAt) {
@@ -115,18 +138,33 @@ router.post('/articles', async ({ body }, res) => {
 
         const publishedAt = toIsoDate(item?.publishedAt || item?.isoDate || item?.pubDate || item?.published);
         const teaser = normalizeTeaser(item?.teaser || item?.summary || item?.description || item?.contentSnippet || item?.content);
+        const content = normalizeContent(item?.content || item?.description || item?.summary || item?.teaser);
         const guidOrHash = createGuidOrHash(item || {}, feedId, publishedAt);
 
         try {
             const result = await run(
                 `INSERT OR IGNORE INTO articles
-                 (feedId, title, teaser, url, publishedAt, guidOrHash)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [feedId, item?.title || null, teaser, item?.url || null, publishedAt, guidOrHash],
+                 (feedId, title, teaser, content, url, publishedAt, guidOrHash)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [feedId, item?.title || null, teaser, content, item?.url || null, publishedAt, guidOrHash],
             );
 
             if (result.changes > 0) {
                 inserted += 1;
+                try {
+                    await classifyAndPersistArticleTopics({
+                        id: result.lastID,
+                        title: item?.title || null,
+                        teaser,
+                        content,
+                    });
+                } catch (classificationError) {
+                    logWarn('Webhook topic classification failed', {
+                        articleId: result.lastID,
+                        feedId,
+                        error: classificationError.message,
+                    });
+                }
             } else {
                 ignored += 1;
             }

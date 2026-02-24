@@ -1033,7 +1033,8 @@ label {
 }
 
 input,
-select {
+select,
+.textarea {
     padding-block: var(--padding-field-block);
     padding-inline: var(--padding-field-inline);
     border: var(--border-width-default) solid var(--color-border-default);
@@ -1052,6 +1053,13 @@ input::placeholder {
 [data-theme='dark'] select optgroup {
     color: var(--color-text-primary);
     background: var(--color-bg-surface);
+}
+
+.textarea {
+    min-block-size: 5rem;
+    resize: vertical;
+    font-family: inherit;
+    line-height: var(--line-height-teaser);
 }
 
 .form-actions {
@@ -1128,6 +1136,13 @@ input::placeholder {
 }
 
 :is(.settings-feeds-left, .settings-lists-left, .settings-feeds-content, .settings-lists-content) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--margin-modal-status-gap);
+    min-inline-size: 0;
+}
+
+:is(.settings-topics-left, .settings-topics-content) {
     display: flex;
     flex-direction: column;
     gap: var(--margin-modal-status-gap);
@@ -1248,6 +1263,44 @@ input::placeholder {
     border-radius: var(--radius-xl);
     background: var(--color-bg-surface);
     box-shadow: var(--shadow-card);
+}
+
+.settings-topic-item {
+    align-items: flex-start;
+}
+
+.settings-topic-item-main {
+    min-inline-size: 0;
+}
+
+.settings-topic-item-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-8);
+    font-weight: var(--font-weight-semibold);
+}
+
+.settings-topic-item-slug {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    text-transform: lowercase;
+}
+
+.settings-topic-item-meta {
+    margin-block-start: var(--space-8);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.settings-topics-json-card,
+.settings-topics-reprocess-card {
+    gap: var(--space-12);
+}
+
+.settings-topics-json-input {
+    min-block-size: 14rem;
+    font-family: 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .btn {
