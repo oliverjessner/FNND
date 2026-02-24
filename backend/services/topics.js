@@ -1,12 +1,32 @@
 import { Engine } from 'json-rules-engine';
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { all, get, run } from '../database/datenbank.js';
 import { logInfo, logWarn } from '../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TOPIC_RULES_FILE_PATH = process.env.TOPIC_RULES_FILE_PATH || path.join(__dirname, '..', '..', 'topics.rules.json');
+
+function resolveTopicRulesFilePath() {
+    const envPath = normalizeWhitespace(process.env.TOPIC_RULES_FILE_PATH || '');
+    if (envPath) {
+        return path.resolve(envPath);
+    }
+
+    const dbPath = normalizeWhitespace(process.env.DB_PATH || '');
+    if (dbPath) {
+        return path.join(path.dirname(path.resolve(dbPath)), 'topics.rules.json');
+    }
+
+    const projectPath = path.join(__dirname, '..', '..', 'topics.rules.json');
+    if (!projectPath.includes('.asar')) {
+        return projectPath;
+    }
+
+    return path.resolve(process.cwd(), 'topics.rules.json');
+}
+
+const TOPIC_RULES_FILE_PATH = resolveTopicRulesFilePath();
 
 const TOPIC_KEYWORD_GROUPS = Object.freeze(['strong', 'medium', 'weak']);
 const TOPIC_SCORE_WEIGHTS = Object.freeze({ strong: 5, medium: 3, weak: 1 });
@@ -178,10 +198,11 @@ function definitionsToRulesObject(definitions) {
 }
 
 async function ensureTopicsRulesFileExists() {
+    await mkdir(path.dirname(TOPIC_RULES_FILE_PATH), { recursive: true });
     try {
         await access(TOPIC_RULES_FILE_PATH);
     } catch {
-        await writeFile(TOPIC_RULES_FILE_PATH, toStableJson(DEFAULT_TOPIC_RULES), 'utf-8');
+        await writeFile(TOPIC_RULES_FILE_PATH, `${toStableJson(DEFAULT_TOPIC_RULES)}\n`, 'utf-8');
     }
 }
 

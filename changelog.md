@@ -2,40 +2,40 @@
 
 Features:
 
-- Topics, you can now define your own topics an NO-BULLSHIT-RSS will find them
-- filter by topic
-- Lists can now be removed
-- dailyDigest now has lists
-- clear button in dashboard (or press esc)
-- stop words and excluding sources for daily digest
+- Topics: define your own topics and let NO-BULLSHIT-RSS classify matching articles automatically.
+- Filter articles by topic in the Dashboard.
+- Lists can now be deleted.
+- Daily Digest now supports adding articles to lists.
+- Added a clear button in the Dashboard (also available via `Esc`).
+- Daily Digest now supports blocked words and excluded sources.
 
 Minor fixes:
 
-- removed the last german from a modal window
-- red and green buttons
+- Removed the remaining German text from a modal.
+- Improved button styling for clearer destructive/save actions.
 
 ## 0.1.0
 
 Features:
 
-- Daily digest, a view where you can see all the articles clustered
-- Daily Digest clustering is now fuzzier with stronger matching logic and guardrails
-- highlight a word right click and instantly search for it
-- darkmode
-- The settings are telling you now how many articles are stored in your database
+- Daily Digest: a dedicated view that clusters related articles.
+- Daily Digest clustering is now fuzzier, with stronger matching logic and guardrails.
+- Highlight any text, right-click, and search for it instantly.
+- Added dark mode.
+- Settings now show how many articles are stored in the database.
 
 Minor fixes:
 
-- everything in english, better naming (contrast in darkmode is not very a11y friendly)
-- a lot of ux/uie improvements
-- removed ai vibe slop code
-- hover animation
-- buy me a coffee button in about window :)
-- starting to code again some minor parts
-- updated outdated deps
+- Switched UI text to English and improved naming consistency (dark mode contrast still needs accessibility improvements).
+- Multiple UX/UI improvements.
+- Removed legacy low-quality code paths.
+- Added hover animations.
+- Added a "Buy me a coffee" button in the About window.
+- Refactored smaller code areas for better maintainability.
+- Updated outdated dependencies.
 
 ToDo:
 
-- By the love of god some guy with windows please tell me if it is running
-- Maybe some test will be fine (someday?)
-- get some test from other people, it works on my machine 24/7 so yeah
+- Verify Windows compatibility with real-world user feedback.
+- Add an automated test suite.
+- Collect broader test feedback beyond local development.

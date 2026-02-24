@@ -56,6 +56,7 @@ function waitForServer(port, attempts = 40, delayMs = 250) {
 function startServer() {
     const serverPath = path.join(__dirname, '..', 'backend', 'server.js');
     const dbPath = path.join(app.getPath('userData'), 'data.db');
+    const topicRulesPath = path.join(app.getPath('userData'), 'topics.rules.json');
     const appPath = app.getAppPath();
     serverLogPath = path.join(app.getPath('userData'), 'server.log');
 
@@ -78,6 +79,7 @@ function startServer() {
             ...process.env,
             PORT: String(PORT),
             DB_PATH: dbPath,
+            TOPIC_RULES_FILE_PATH: topicRulesPath,
             ELECTRON_RUN_AS_NODE: '1',
             SERVER_LOG_PATH: serverLogPath,
         },
