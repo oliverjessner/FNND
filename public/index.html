@@ -38,6 +38,9 @@
                         <select id="filter-source" class="select">
                             <option value="">all sources</option>
                         </select>
+                        <select id="filter-topic" class="select">
+                            <option value="">all topics</option>
+                        </select>
 
                         <button id="run-fetch" class="btn danger" type="button">clear</button>
                     </div>
@@ -95,9 +98,9 @@
                         <button class="settings-tab is-active" data-settings="feeds" type="button">
                             Add new RSS Feeds
                         </button>
+                        <button class="settings-tab" data-settings="topics" type="button">Topics</button>
                         <button class="settings-tab" data-settings="lists" type="button">Lists</button>
                         <button class="settings-tab" data-settings="digest" type="button">Daily Digest</button>
-                        <button class="settings-tab" data-settings="topics" type="button">Topics</button>
                         <button class="settings-tab" data-settings="cosmetics" type="button">Cosmetics</button>
                     </div>
                 </div>
@@ -255,7 +258,11 @@
                             <p class="teaser">Validate and save topic rules before they are applied.</p>
                             <div class="form-row">
                                 <label for="topics-json-input">topics.rules.json</label>
-                                <textarea id="topics-json-input" class="textarea settings-topics-json-input" rows="13"></textarea>
+                                <textarea
+                                    id="topics-json-input"
+                                    class="textarea settings-topics-json-input"
+                                    rows="13"
+                                ></textarea>
                             </div>
                             <div class="form-actions">
                                 <button type="button" class="btn" id="topics-json-validate">validate json</button>
@@ -263,18 +270,19 @@
                             </div>
                             <div id="topics-json-status" class="form-status"></div>
                         </section>
+                    </div>
 
+                    <div class="settings-topics-content">
                         <section class="card settings-topics-reprocess-card">
                             <h3 class="title">Reprocess Articles</h3>
                             <p class="teaser">Re-run topic classification for all existing articles.</p>
                             <div class="form-actions">
-                                <button type="button" class="btn danger" id="topics-reprocess">re-run classification</button>
+                                <button type="button" class="btn danger" id="topics-reprocess">
+                                    re-run classification
+                                </button>
                             </div>
                             <div id="topics-reprocess-status" class="form-status"></div>
                         </section>
-                    </div>
-
-                    <div class="settings-topics-content">
                         <div id="topics-state" class="state">Lädt…</div>
                         <div id="topics-list" class="list"></div>
                     </div>

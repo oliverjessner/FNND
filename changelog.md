@@ -3,6 +3,7 @@
 Features:
 
 - Topics, you can now define your own topics an NO-BULLSHIT-RSS will find them
+- filter by topic
 - Lists can now be removed
 - dailyDigest now has lists
 - clear button in dashboard (or press esc)

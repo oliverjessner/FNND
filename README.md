@@ -11,6 +11,7 @@ highlights
 - Self-hosted DB: your articles are stored in your own database
 - Open source and no payment / no subscription / no ads
 - Daily Digest: a clustered view that groups related articles for faster scanning
+- Local Topics: rule-based topic tagging (no external API) with editable JSON rules
 - Improved clustering: fuzzier matching with stronger logic and guardrails
 - Instant search: highlight a word, right-click, and search it immediately
 - Dark mode

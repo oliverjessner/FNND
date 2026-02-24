@@ -26,6 +26,7 @@ const feedsState = document.getElementById('feeds-state');
 const feedsList = document.getElementById('feeds-list');
 const filterList = document.getElementById('filter-list');
 const filterSource = document.getElementById('filter-source');
+const filterTopic = document.getElementById('filter-topic');
 const runFetchBtn = document.getElementById('run-fetch');
 const toggleLayoutBtn = document.getElementById('toggle-layout');
 const themeToggleBtn = document.getElementById('theme-toggle');
@@ -188,6 +189,37 @@ function getDigestClusterArticleIds(cluster) {
     return getNormalizedArticleIds(cluster.items.map(item => item?.id));
 }
 
+function getDigestClusterTopics(clusterItems) {
+    const topicsMap = new Map();
+    const items = Array.isArray(clusterItems) ? clusterItems : [];
+
+    items.forEach(item => {
+        const itemTopics = Array.isArray(item?.topics) ? item.topics : [];
+        itemTopics.forEach(topic => {
+            const slug = String(topic?.slug || '')
+                .trim()
+                .toLowerCase();
+            const label = String(topic?.label || slug || '')
+                .trim();
+            if (!label) {
+                return;
+            }
+            const key = slug || label.toLowerCase();
+            const score = Number(topic?.score || 0);
+            const existing = topicsMap.get(key);
+            if (!existing || score > existing.score) {
+                topicsMap.set(key, {
+                    slug,
+                    label,
+                    score: Number.isFinite(score) ? score : 0,
+                });
+            }
+        });
+    });
+
+    return Array.from(topicsMap.values()).sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+}
+
 function removeClusterFromDigestPayloadByArticleIds(articleIds) {
     const normalizedIds = getNormalizedArticleIds(articleIds);
     if (!lastDigestPayload || !Array.isArray(lastDigestPayload.clusters) || normalizedIds.length === 0) {
@@ -236,7 +268,7 @@ function applyDigestLocalMutationUi() {
     updateDigestMarkAllButton(lastDigestPayload);
 }
 
-async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'Digest topic', options = {}) {
+async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'Digest content', options = {}) {
     const ids = getNormalizedArticleIds(articleIds);
     if (ids.length === 0) {
         return false;
@@ -800,6 +832,7 @@ async function loadTopics() {
         const payload = await apiFetch('/api/topics');
         state.topics = Array.isArray(payload?.topics) ? payload.topics : [];
         renderTopics();
+        renderTopicFilterOptions();
     } catch (err) {
         topicsState.textContent = `Error: ${err.message}`;
     }
@@ -1205,6 +1238,21 @@ function renderListFilterOptions() {
     filterList.value = selected;
 }
 
+function renderTopicFilterOptions() {
+    if (!filterTopic) {
+        return;
+    }
+    const selected = filterTopic.value;
+    filterTopic.innerHTML = '<option value="">all topics</option>';
+    state.topics.forEach(topic => {
+        const option = document.createElement('option');
+        option.value = topic.slug;
+        option.textContent = topic.label || topic.slug;
+        filterTopic.appendChild(option);
+    });
+    filterTopic.value = selected;
+}
+
 function findFeedIdBySourceName(sourceName) {
     const normalizedSourceName = String(sourceName || '')
         .trim()
@@ -1221,6 +1269,40 @@ function findFeedIdBySourceName(sourceName) {
     });
 
     return matchedFeed ? String(matchedFeed.id) : '';
+}
+
+async function openDashboardWithTopicFilter(topicSlug, { switchToMain = false } = {}) {
+    if (!filterTopic) {
+        return;
+    }
+
+    const normalizedTopicSlug = String(topicSlug || '')
+        .trim()
+        .toLowerCase();
+
+    if (!normalizedTopicSlug) {
+        return;
+    }
+
+    let optionExists = Array.from(filterTopic.options).some(option => option.value === normalizedTopicSlug);
+    if (!optionExists) {
+        await loadTopics();
+        optionExists = Array.from(filterTopic.options).some(option => option.value === normalizedTopicSlug);
+        if (!optionExists) {
+            return;
+        }
+    }
+
+    filterTopic.value = normalizedTopicSlug;
+    if (switchToMain) {
+        setView('main');
+        if (!articlesNeedsRefresh) {
+            await loadArticles();
+        }
+        return;
+    }
+
+    await loadArticles();
 }
 
 async function openDashboardWithSourceFilter({ feedId, sourceName } = {}) {
@@ -1315,6 +1397,38 @@ function renderArticles(articles) {
         node.querySelector('.title').textContent = article.title || 'Ohne Titel';
         node.querySelector('.teaser').textContent = article.teaser || '';
 
+        const contentEl = node.querySelector('.content');
+        const articleTopics = Array.isArray(article.topics) ? article.topics : [];
+        if (contentEl && articleTopics.length > 0) {
+            const topicRow = document.createElement('div');
+            topicRow.className = 'article-topics';
+
+            articleTopics.forEach(topic => {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'article-topic-chip';
+                chip.textContent = topic.label || topic.slug || 'topic';
+                chip.title = `${topic.label || topic.slug} (${Number(topic.score || 0).toFixed(2)})`;
+
+                const topicSlug = String(topic.slug || '')
+                    .trim()
+                    .toLowerCase();
+                if (topicSlug && filterTopic && filterTopic.value === topicSlug) {
+                    chip.classList.add('is-active');
+                }
+
+                chip.addEventListener('click', async event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    await openDashboardWithTopicFilter(topicSlug);
+                });
+
+                topicRow.appendChild(chip);
+            });
+
+            contentEl.appendChild(topicRow);
+        }
+
         const link = node.querySelector('.link');
         const addBtn = node.querySelector('.btn-add');
 
@@ -1359,6 +1473,7 @@ function renderDigestClusters(payload) {
         const titleEl = node.querySelector('.digest-cluster-title');
         const sourcesEl = node.querySelector('.digest-cluster-sources');
         const itemsGridEl = node.querySelector('.digest-items-grid');
+        const clusterTopics = getDigestClusterTopics(items);
 
         if (countEl) {
             countEl.textContent =
@@ -1429,6 +1544,7 @@ function renderDigestClusters(payload) {
                 });
             }
         }
+
         if (itemsGridEl) {
             const clusterArticleIds = getDigestClusterArticleIds(cluster);
             itemsGridEl.innerHTML = '';
@@ -1501,6 +1617,38 @@ function renderDigestClusters(payload) {
 
             const clusterCard = node.querySelector('.digest-cluster');
             if (clusterCard) {
+                const clusterFooter = document.createElement('div');
+                clusterFooter.className = 'digest-cluster-footer';
+
+                const clusterTopicsEl = document.createElement('div');
+                clusterTopicsEl.className = 'digest-cluster-topics';
+
+                if (clusterTopics.length > 0) {
+                    clusterTopics.forEach(topic => {
+                        const chip = document.createElement('button');
+                        chip.type = 'button';
+                        chip.className = 'digest-topic-chip';
+                        chip.textContent = topic.label;
+                        chip.title = topic.slug || topic.label;
+
+                        if (topic.slug) {
+                            chip.classList.add('is-clickable');
+                            if (filterTopic && filterTopic.value === topic.slug) {
+                                chip.classList.add('is-active');
+                            }
+                            chip.addEventListener('click', async event => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                await openDashboardWithTopicFilter(topic.slug, { switchToMain: true });
+                            });
+                        } else {
+                            chip.disabled = true;
+                        }
+
+                        clusterTopicsEl.appendChild(chip);
+                    });
+                }
+
                 const clusterActions = document.createElement('div');
                 clusterActions.className = 'digest-cluster-actions';
 
@@ -1521,14 +1669,16 @@ function renderDigestClusters(payload) {
                 clusterDigestBtn.type = 'button';
                 clusterDigestBtn.className = 'btn ghost digest-cluster-digest-btn';
                 clusterDigestBtn.textContent =
-                    clusterArticleIds.length > 1 ? `Digest topic (${clusterArticleIds.length})` : 'Digest topic';
+                    clusterArticleIds.length > 1
+                        ? `Digest content (${clusterArticleIds.length})`
+                        : 'Digest content';
                 clusterDigestBtn.disabled = clusterArticleIds.length === 0;
 
                 if (!clusterDigestBtn.disabled) {
                     clusterDigestBtn.addEventListener('click', async event => {
                         event.preventDefault();
                         event.stopPropagation();
-                        const ok = await markDigestArticlesByIds(clusterArticleIds, clusterDigestBtn, 'Digest topic', {
+                        const ok = await markDigestArticlesByIds(clusterArticleIds, clusterDigestBtn, 'Digest content', {
                             refresh: false,
                             skipNextDigestEvent: true,
                         });
@@ -1545,7 +1695,9 @@ function renderDigestClusters(payload) {
 
                 clusterActions.appendChild(clusterAddBtn);
                 clusterActions.appendChild(clusterDigestBtn);
-                clusterCard.appendChild(clusterActions);
+                clusterFooter.appendChild(clusterTopicsEl);
+                clusterFooter.appendChild(clusterActions);
+                clusterCard.appendChild(clusterFooter);
             }
         }
 
@@ -1668,6 +1820,7 @@ async function loadArticles() {
     const params = new URLSearchParams();
     const selectedList = filterList.value;
     const selected = filterSource.value;
+    const selectedTopic = filterTopic?.value || '';
 
     articlesState.style.display = 'none';
     articlesState.textContent = '';
@@ -1680,6 +1833,9 @@ async function loadArticles() {
     }
     if (selectedList) {
         params.set('listId', selectedList);
+    }
+    if (selectedTopic) {
+        params.set('topic', selectedTopic);
     }
 
     const query = searchInput.value.trim();
@@ -1719,7 +1875,8 @@ function hasDashboardFiltersApplied() {
     const hasQuery = normalizeSearchQuery(searchInput?.value || '').length > 0;
     const hasListFilter = Boolean(filterList?.value);
     const hasSourceFilter = Boolean(filterSource?.value);
-    return hasQuery || hasListFilter || hasSourceFilter;
+    const hasTopicFilter = Boolean(filterTopic?.value);
+    return hasQuery || hasListFilter || hasSourceFilter || hasTopicFilter;
 }
 
 async function clearDashboardFilters() {
@@ -1736,6 +1893,9 @@ async function clearDashboardFilters() {
         searchInput.value = '';
         filterList.value = '';
         filterSource.value = '';
+        if (filterTopic) {
+            filterTopic.value = '';
+        }
         scrollArticlesToTop();
         await loadArticles();
     })();
@@ -1911,6 +2071,9 @@ feedTest.addEventListener('click', async () => {
 
 filterSource.addEventListener('change', () => loadArticles());
 filterList.addEventListener('change', () => loadArticles());
+if (filterTopic) {
+    filterTopic.addEventListener('change', () => loadArticles());
+}
 toggleLayoutBtn.addEventListener('click', () => {
     isListLayout = !isListLayout;
     localStorage.setItem(LAYOUT_KEY, isListLayout ? 'list' : 'cards');

@@ -33,6 +33,50 @@ function chunkArray(items, size = 400) {
     return chunks;
 }
 
+async function loadTopicsByArticleIds(articleIds) {
+    const normalizedArticleIds = normalizeArticleIds(articleIds);
+    const topicsByArticleId = new Map();
+
+    if (normalizedArticleIds.length === 0) {
+        return topicsByArticleId;
+    }
+
+    const articleIdChunks = chunkArray(normalizedArticleIds, 400);
+    for (const chunk of articleIdChunks) {
+        const placeholders = chunk.map(() => '?').join(', ');
+        const topicRows = await all(
+            `
+            SELECT
+                article_topics.article_id AS articleId,
+                article_topics.topic_slug AS topicSlug,
+                topics.label AS topicLabel,
+                article_topics.score AS score
+            FROM article_topics
+            JOIN topics ON topics.slug = article_topics.topic_slug
+            WHERE article_topics.article_id IN (${placeholders})
+            ORDER BY article_topics.score DESC, article_topics.topic_slug ASC
+            `,
+            chunk,
+        );
+
+        topicRows.forEach(row => {
+            const articleId = Number(row.articleId);
+            if (!Number.isInteger(articleId) || articleId <= 0) {
+                return;
+            }
+            const existing = topicsByArticleId.get(articleId) || [];
+            existing.push({
+                slug: row.topicSlug,
+                label: row.topicLabel || row.topicSlug,
+                score: Number(row.score || 0),
+            });
+            topicsByArticleId.set(articleId, existing);
+        });
+    }
+
+    return topicsByArticleId;
+}
+
 async function markArticlesAsDailyDigestedInTransaction(articleIds) {
     const ids = normalizeArticleIds(articleIds);
     if (ids.length === 0) {
@@ -105,12 +149,20 @@ router.get('/daily-digest', async (_req, res) => {
         [startIso, endIso],
     );
     const mapped = rows.map(mapArticleRow);
-    const clusters = clusterDigestArticles(mapped);
+    const articleIds = mapped
+        .map(article => Number(article.id))
+        .filter(articleId => Number.isInteger(articleId) && articleId > 0);
+    const topicsByArticleId = await loadTopicsByArticleIds(articleIds);
+    const withTopics = mapped.map(article => ({
+        ...article,
+        topics: topicsByArticleId.get(Number(article.id)) || [],
+    }));
+    const clusters = clusterDigestArticles(withTopics);
 
     return res.json({
         startIso,
         endIso,
-        totalArticles: mapped.length,
+        totalArticles: withTopics.length,
         totalClusters: clusters.length,
         clusters,
     });
@@ -151,7 +203,7 @@ router.post('/daily-digest/mark-all-digested', async ({ body }, res) => {
     return res.json({ ok: true, ...result });
 });
 
-router.get('/', async ({ query: { feedId, source, listId, query, limit = 100 } }, res) => {
+router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 100 } }, res) => {
     const params = [];
     const whereParts = [];
     const like = `%${query}%`;
@@ -166,6 +218,10 @@ router.get('/', async ({ query: { feedId, source, listId, query, limit = 100 } }
     if (listId) {
         whereParts.push('list_items.listId = ?');
         params.push(listId);
+    }
+    if (topic) {
+        whereParts.push('EXISTS (SELECT 1 FROM article_topics WHERE article_topics.article_id = articles.id AND article_topics.topic_slug = ?)');
+        params.push(String(topic).trim().toLowerCase());
     }
     if (query) {
         logInfo('Search query', { query });
@@ -187,8 +243,17 @@ router.get('/', async ({ query: { feedId, source, listId, query, limit = 100 } }
 
     const rows = await all(sql, params);
     const mapped = rows.map(mapArticleRow);
+    const articleIds = mapped
+        .map(article => Number(article.id))
+        .filter(articleId => Number.isInteger(articleId) && articleId > 0);
+    const topicsByArticleId = await loadTopicsByArticleIds(articleIds);
 
-    return res.json(mapped);
+    const withTopics = mapped.map(article => ({
+        ...article,
+        topics: topicsByArticleId.get(Number(article.id)) || [],
+    }));
+
+    return res.json(withTopics);
 });
 
 router.get('/:id/lists', async ({ params: { id } }, res) => {

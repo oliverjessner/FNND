@@ -281,9 +281,20 @@ async function saveTopicDefinitionsToDatabase(definitions) {
 }
 
 export async function ensureTopicDefinitionsInitialized() {
-    const { definitions } = await readTopicRulesFile();
-    await saveTopicDefinitionsToDatabase(definitions);
-    return definitions;
+    try {
+        const { definitions } = await readTopicRulesFile();
+        await saveTopicDefinitionsToDatabase(definitions);
+        return definitions;
+    } catch (err) {
+        logWarn('Invalid topic rules file. Restoring defaults.', {
+            path: TOPIC_RULES_FILE_PATH,
+            error: err.message,
+        });
+        await writeFile(TOPIC_RULES_FILE_PATH, `${toStableJson(DEFAULT_TOPIC_RULES)}\n`, 'utf-8');
+        const fallbackDefinitions = validateAndNormalizeTopicDefinitions(DEFAULT_TOPIC_RULES);
+        await saveTopicDefinitionsToDatabase(fallbackDefinitions);
+        return fallbackDefinitions;
+    }
 }
 
 export async function getTopicDefinitions({ force = false } = {}) {
