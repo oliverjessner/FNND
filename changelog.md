@@ -1,3 +1,9 @@
+## 0.3.0
+
+Minor Fixes
+
+- Quality managament for all parts of the app
+
 ## 0.2.0
 
 Features:

@@ -15,11 +15,12 @@ const articlesList = document.getElementById('articles-list');
 const articlesScroll = document.querySelector('.articles-scroll');
 const digestState = document.getElementById('digest-state');
 const digestList = document.getElementById('digest-list');
-const digestTitle = document.getElementById('digest-title');
 const digestSubtitle = document.getElementById('digest-subtitle');
 const digestMarkAllBtn = document.getElementById('digest-mark-all');
+const digestRangeToggle = document.getElementById('digest-range-toggle');
+const digestRangeOptions = document.querySelectorAll('#digest-range-toggle .digest-range-option');
 const digestSortToggle = document.getElementById('digest-sort-toggle');
-const digestSortOptions = document.querySelectorAll('.digest-sort-option');
+const digestSortOptions = document.querySelectorAll('#digest-sort-toggle .digest-sort-option');
 const digestTemplate = document.getElementById('digest-cluster-template');
 const digestHeader = document.querySelector('.digest-header');
 const feedsState = document.getElementById('feeds-state');
@@ -87,6 +88,7 @@ const modalConfirm = document.getElementById('modal-confirm');
 const modalExistingLists = document.getElementById('modal-existing-lists');
 const LAYOUT_KEY = 'fnnd.layout';
 const DIGEST_SORT_KEY = 'fnnd.digestSort';
+const DIGEST_RANGE_KEY = 'fnnd.digestRange';
 const THEME_KEY = 'fnnd.theme';
 
 let loadingStartedAt = 0;
@@ -96,6 +98,7 @@ let listEditingId = null;
 let topicEditingSlug = null;
 let sse = null;
 let digestSortDirection = localStorage.getItem(DIGEST_SORT_KEY) === 'asc' ? 'asc' : 'desc';
+let digestRange = normalizeDigestRange(localStorage.getItem(DIGEST_RANGE_KEY));
 let isDarkTheme = localStorage.getItem(THEME_KEY) === 'dark';
 let lastDigestPayload = null;
 let digestNeedsRefresh = true;
@@ -105,6 +108,61 @@ let articlesNeedsRefresh = true;
 let pendingDigestMutationEventsToSkip = 0;
 let pendingArticleIds = [];
 let clearDashboardPromise = null;
+let isDigestRangeSwitchLoading = false;
+
+function normalizeDigestRange(value) {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase();
+    if (normalized === 'month') {
+        return 'month';
+    }
+    if (normalized === 'week') {
+        return 'week';
+    }
+    return 'day';
+}
+
+function getDigestRangeLabel(range = digestRange) {
+    const normalized = normalizeDigestRange(range);
+    if (normalized === 'month') {
+        return 'month';
+    }
+    return normalized === 'week' ? 'week' : 'day';
+}
+
+function getDigestEmptyStateMessage(range = digestRange) {
+    const normalized = normalizeDigestRange(range);
+    if (normalized === 'month') {
+        return 'Für diesen Monat sind noch keine Artikel gespeichert.';
+    }
+    return normalized === 'week' ? 'Für diese Woche sind noch keine Artikel gespeichert.' : 'Für heute sind noch keine Artikel gespeichert.';
+}
+
+function updateDigestRangeUi() {
+    if (!digestRangeOptions || digestRangeOptions.length === 0) {
+        return;
+    }
+    const activeRange = normalizeDigestRange(digestRange);
+    digestRangeOptions.forEach(option => {
+        const isActive = normalizeDigestRange(option.dataset.digestRange) === activeRange;
+        option.classList.toggle('is-active', isActive);
+        option.setAttribute('aria-pressed', String(isActive));
+    });
+}
+
+function setDigestRangeToggleDisabled(disabled) {
+    if (!digestRangeOptions || digestRangeOptions.length === 0) {
+        return;
+    }
+    digestRangeOptions.forEach(option => {
+        option.disabled = Boolean(disabled);
+    });
+    if (digestRangeToggle) {
+        digestRangeToggle.setAttribute('aria-disabled', String(Boolean(disabled)));
+        digestRangeToggle.setAttribute('aria-busy', String(Boolean(disabled)));
+    }
+}
 
 function updateDigestSortUi() {
     if (!digestSortOptions || digestSortOptions.length === 0) {
@@ -259,7 +317,7 @@ function applyDigestLocalMutationUi() {
     }
     const clusterElements = digestList.querySelectorAll('.digest-cluster');
     if (clusterElements.length === 0) {
-        digestState.textContent = 'Für heute sind noch keine Artikel gespeichert.';
+        digestState.textContent = getDigestEmptyStateMessage(lastDigestPayload?.variant || digestRange);
         digestState.style.display = 'block';
     } else {
         digestState.style.display = 'none';
@@ -285,13 +343,13 @@ async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'D
     }
 
     try {
-        await apiFetch('/api/articles/daily-digest/mark-all-digested', {
+        await apiFetch('/api/articles/digest/mark-all-digested', {
             method: 'POST',
             body: JSON.stringify({ articleIds: ids }),
         });
         if (refresh) {
             digestNeedsRefresh = true;
-            await loadDailyDigest({ force: true });
+            await loadDigest({ force: true });
         }
         return true;
     } catch (err) {
@@ -329,7 +387,7 @@ function setView(name) {
         loadArticles();
     }
     if (name === 'digest') {
-        loadDailyDigest();
+        loadDigest();
     }
 }
 
@@ -1453,11 +1511,12 @@ function renderDigestClusters(payload) {
         return;
     }
 
+    const activeRange = normalizeDigestRange(payload?.variant || digestRange);
     const clusters = sortDigestClusters(Array.isArray(payload?.clusters) ? payload.clusters : []);
     digestList.innerHTML = '';
 
     if (clusters.length === 0) {
-        digestState.textContent = 'Für heute sind noch keine Artikel gespeichert.';
+        digestState.textContent = getDigestEmptyStateMessage(activeRange);
         digestState.style.display = 'block';
         return;
     }
@@ -1706,23 +1765,15 @@ function renderDigestClusters(payload) {
 }
 
 function renderDigestSubtitle(payload) {
-    if (!digestSubtitle && !digestTitle) {
+    if (!digestSubtitle) {
         return;
     }
 
+    const activeRange = normalizeDigestRange(payload?.variant || digestRange);
     const totalArticles = Number(payload?.totalArticles || 0);
     const totalClusters = Number(payload?.totalClusters || 0);
-    const startDate = payload?.startIso ? new Date(payload.startIso) : new Date();
-    const dayLabel = Number.isNaN(startDate.getTime())
-        ? new Date().toLocaleDateString('de-DE', { dateStyle: 'full' })
-        : startDate.toLocaleDateString('de-DE', { dateStyle: 'full' });
 
-    if (digestTitle) {
-        digestTitle.textContent = dayLabel;
-    }
-    if (digestSubtitle) {
-        digestSubtitle.textContent = `${totalArticles.toLocaleString('de-DE')} Artikel · ${totalClusters.toLocaleString('de-DE')} Cluster`;
-    }
+    digestSubtitle.textContent = `${getDigestRangeLabel(activeRange)} · ${totalArticles.toLocaleString('de-DE')} Artikel · ${totalClusters.toLocaleString('de-DE')} Cluster`;
 }
 
 function isViewActive(name) {
@@ -1745,6 +1796,7 @@ function getDigestPayloadFingerprint(payload) {
         .join('|');
 
     return [
+        normalizeDigestRange(payload?.variant || 'day'),
         payload.startIso || '',
         payload.endIso || '',
         Number(payload.totalArticles || 0),
@@ -1756,16 +1808,20 @@ function getDigestPayloadFingerprint(payload) {
 function requestDigestRefresh({ force = false } = {}) {
     digestNeedsRefresh = true;
     if (isViewActive('digest')) {
-        void loadDailyDigest({ force, silent: true });
+        void loadDigest({ force, silent: true });
     }
 }
 
-async function loadDailyDigest({ force = false, silent = false } = {}) {
+async function loadDigest({ force = false, silent = false } = {}) {
     if (!digestState || !digestList) {
         return;
     }
 
-    if (!force && !digestNeedsRefresh && lastDigestPayload) {
+    const activeRange = normalizeDigestRange(digestRange);
+    const payloadRange = normalizeDigestRange(lastDigestPayload?.variant || 'day');
+    const hasMatchingPayload = lastDigestPayload && payloadRange === activeRange;
+
+    if (!force && !digestNeedsRefresh && hasMatchingPayload) {
         return;
     }
 
@@ -1783,20 +1839,25 @@ async function loadDailyDigest({ force = false, silent = false } = {}) {
 
     digestLoadPromise = (async () => {
         try {
-            const payload = await apiFetch('/api/articles/daily-digest');
-            const nextFingerprint = getDigestPayloadFingerprint(payload);
+            const query = new URLSearchParams({ variant: activeRange });
+            const payload = await apiFetch(`/api/articles/digest?${query.toString()}`);
+            const normalizedPayload = {
+                ...payload,
+                variant: normalizeDigestRange(payload?.variant || activeRange),
+            };
+            const nextFingerprint = getDigestPayloadFingerprint(normalizedPayload);
             const hasDigestChanged = nextFingerprint !== lastDigestRenderFingerprint;
 
-            lastDigestPayload = payload;
+            lastDigestPayload = normalizedPayload;
             digestNeedsRefresh = false;
-            renderDigestSubtitle(payload);
+            renderDigestSubtitle(normalizedPayload);
 
             if (hasDigestChanged || showLoadingState || force) {
-                renderDigestClusters(payload);
+                renderDigestClusters(normalizedPayload);
                 lastDigestRenderFingerprint = nextFingerprint;
             }
 
-            updateDigestMarkAllButton(payload);
+            updateDigestMarkAllButton(normalizedPayload);
         } catch (err) {
             if (!lastDigestPayload) {
                 lastDigestPayload = null;
@@ -1806,7 +1867,7 @@ async function loadDailyDigest({ force = false, silent = false } = {}) {
                 updateDigestMarkAllButton({ clusters: [] });
             }
             if (digestSubtitle) {
-                digestSubtitle.textContent = 'Daily Digest konnte nicht geladen werden.';
+                digestSubtitle.textContent = 'Digest konnte nicht geladen werden.';
             }
         } finally {
             digestLoadPromise = null;
@@ -2095,6 +2156,36 @@ if (settingsFetchNowBtn) {
     });
 }
 
+if (digestRangeToggle && digestRangeOptions.length > 0) {
+    updateDigestRangeUi();
+    setDigestRangeToggleDisabled(false);
+    digestRangeOptions.forEach(option => {
+        option.addEventListener('click', async () => {
+            if (isDigestRangeSwitchLoading) {
+                return;
+            }
+            const nextRange = normalizeDigestRange(option.dataset.digestRange);
+            if (nextRange === digestRange) {
+                return;
+            }
+            digestRange = nextRange;
+            localStorage.setItem(DIGEST_RANGE_KEY, digestRange);
+            updateDigestRangeUi();
+            digestNeedsRefresh = true;
+            isDigestRangeSwitchLoading = true;
+            setDigestRangeToggleDisabled(true);
+            try {
+                await loadDigest({ force: true });
+            } finally {
+                isDigestRangeSwitchLoading = false;
+                setDigestRangeToggleDisabled(false);
+            }
+        });
+    });
+} else {
+    localStorage.setItem(DIGEST_RANGE_KEY, digestRange);
+}
+
 if (digestSortToggle && digestSortOptions.length > 0) {
     updateDigestSortUi();
     digestSortOptions.forEach(option => {
@@ -2111,7 +2202,7 @@ if (digestSortToggle && digestSortOptions.length > 0) {
                 renderDigestClusters(lastDigestPayload);
                 return;
             }
-            loadDailyDigest();
+            loadDigest();
         });
     });
 } else {
@@ -2174,7 +2265,7 @@ async function boot() {
     await loadTopics();
     await loadTopicRulesJson();
     await loadArticles();
-    await loadDailyDigest({ force: true });
+    await loadDigest({ force: true });
     await loadFetchStatus();
     setupSse();
 }
@@ -2222,7 +2313,7 @@ function setupSse() {
             }
             if (eventName === 'articles.updated') {
                 const source = payload?.data?.source || '';
-                if (source === 'daily-digest' && pendingDigestMutationEventsToSkip > 0) {
+                if ((source === 'digest' || source === 'daily-digest') && pendingDigestMutationEventsToSkip > 0) {
                     pendingDigestMutationEventsToSkip -= 1;
                     return;
                 }

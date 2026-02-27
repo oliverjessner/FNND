@@ -173,14 +173,59 @@ export function mapArticleRow(row) {
     return { ...rest, sourceLogoDataUrl: logoDataUrl };
 }
 
-export function getTodayRangeIso() {
-    const start = new Date();
-
+function getStartOfDay(referenceDate = new Date()) {
+    const start = new Date(referenceDate);
     start.setHours(0, 0, 0, 0);
+    return start;
+}
+
+export function getDayRangeIso(referenceDate = new Date()) {
+    const start = getStartOfDay(referenceDate);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
+    return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
+export function getWeekRangeIso(referenceDate = new Date()) {
+    const start = getStartOfDay(referenceDate);
+    const dayOfWeek = start.getDay();
+    const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    start.setDate(start.getDate() + distanceToMonday);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
+export function getMonthRangeIso(referenceDate = new Date()) {
+    const start = getStartOfDay(referenceDate);
+    start.setDate(1);
+
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 1);
 
     return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
+export function normalizeDigestVariant(value) {
+    const normalized = String(value || 'day')
+        .trim()
+        .toLowerCase();
+    if (normalized === 'month') {
+        return 'month';
+    }
+    if (normalized === 'week') {
+        return 'week';
+    }
+    return 'day';
+}
+
+export function getDigestRangeIso(variant = 'day', referenceDate = new Date()) {
+    const normalizedVariant = normalizeDigestVariant(variant);
+    if (normalizedVariant === 'month') {
+        return getMonthRangeIso(referenceDate);
+    }
+    return normalizedVariant === 'week' ? getWeekRangeIso(referenceDate) : getDayRangeIso(referenceDate);
 }
 
 function stripHtml(value) {

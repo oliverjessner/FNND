@@ -1,6 +1,12 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
-import { NORMALIZED_PUBLISHED_AT_SQL, clusterDigestArticles, getTodayRangeIso, mapArticleRow } from './dailyDigest.js';
+import {
+    NORMALIZED_PUBLISHED_AT_SQL,
+    clusterDigestArticles,
+    getDigestRangeIso,
+    mapArticleRow,
+    normalizeDigestVariant,
+} from './digest.js';
 import { publish } from '../services/events.js';
 import { logInfo } from '../utils/logger.js';
 
@@ -77,7 +83,7 @@ async function loadTopicsByArticleIds(articleIds) {
     return topicsByArticleId;
 }
 
-async function markArticlesAsDailyDigestedInTransaction(articleIds) {
+async function markArticlesAsDigestedInTransaction(articleIds) {
     const ids = normalizeArticleIds(articleIds);
     if (ids.length === 0) {
         return { updated: 0, total: 0 };
@@ -105,13 +111,9 @@ async function markArticlesAsDailyDigestedInTransaction(articleIds) {
     return { updated, total: ids.length };
 }
 
-router.get('/stats', async (_req, res) => {
-    const row = await get('SELECT COUNT(*) AS total FROM articles');
-    return res.json({ total: Number(row?.total || 0) });
-});
-
-router.get('/daily-digest', async (_req, res) => {
-    const { startIso, endIso } = getTodayRangeIso();
+async function buildDigestPayload(variant = 'day') {
+    const normalizedVariant = normalizeDigestVariant(variant);
+    const { startIso, endIso } = getDigestRangeIso(normalizedVariant);
     const rows = await all(
         `
         WITH normalized_articles AS (
@@ -148,6 +150,7 @@ router.get('/daily-digest', async (_req, res) => {
         `,
         [startIso, endIso],
     );
+
     const mapped = rows.map(mapArticleRow);
     const articleIds = mapped
         .map(article => Number(article.id))
@@ -158,18 +161,37 @@ router.get('/daily-digest', async (_req, res) => {
         topics: topicsByArticleId.get(Number(article.id)) || [],
     }));
     const clusters = clusterDigestArticles(withTopics);
+    const visibleClusters =
+        normalizedVariant === 'month'
+            ? clusters.filter(cluster => {
+                  const itemCount = Array.isArray(cluster?.items) ? cluster.items.length : 0;
+                  const clusterCount = Number(cluster?.clusterCount || 0);
+                  return Math.max(itemCount, clusterCount) > 1;
+              })
+            : clusters;
+    const totalArticles = visibleClusters.reduce((sum, cluster) => {
+        const items = Array.isArray(cluster?.items) ? cluster.items : [];
+        return sum + items.length;
+    }, 0);
 
-    return res.json({
+    return {
+        variant: normalizedVariant,
         startIso,
         endIso,
-        totalArticles: withTopics.length,
-        totalClusters: clusters.length,
-        clusters,
-    });
-});
+        totalArticles,
+        totalClusters: visibleClusters.length,
+        clusters: visibleClusters,
+    };
+}
 
-router.patch('/:id/daily-digested', async ({ params: { id } }, res) => {
-    const articleId = Number(id);
+async function handleDigestRequest(req, res) {
+    const variant = normalizeDigestVariant(req.query?.variant || req.query?.range || 'day');
+    const payload = await buildDigestPayload(variant);
+    return res.json(payload);
+}
+
+async function handleMarkArticleDigested(req, res) {
+    const articleId = Number(req.params?.id);
     if (!Number.isInteger(articleId) || articleId <= 0) {
         return res.status(400).json({ error: 'Invalid article id' });
     }
@@ -180,28 +202,44 @@ router.patch('/:id/daily-digested', async ({ params: { id } }, res) => {
     }
 
     await run('UPDATE articles SET dailyDigested = 1 WHERE id = ?', [articleId]);
-    publish('articles.updated', { source: 'daily-digest', articleId, dailyDigested: true });
+    publish('articles.updated', { source: 'digest', articleId, dailyDigested: true });
 
     return res.json({
         ok: true,
         id: articleId,
+        digested: true,
         dailyDigested: true,
         alreadyDigested: Boolean(existing.dailyDigested),
     });
-});
+}
 
-router.post('/daily-digest/mark-all-digested', async ({ body }, res) => {
-    const articleIds = normalizeArticleIds(body?.articleIds);
-    const result = await markArticlesAsDailyDigestedInTransaction(articleIds);
+async function handleMarkAllDigested(req, res) {
+    const articleIds = normalizeArticleIds(req.body?.articleIds);
+    const result = await markArticlesAsDigestedInTransaction(articleIds);
     publish('articles.updated', {
-        source: 'daily-digest',
+        source: 'digest',
         batch: true,
         updated: result.updated,
         total: result.total,
     });
 
     return res.json({ ok: true, ...result });
+}
+
+router.get('/stats', async (_req, res) => {
+    const row = await get('SELECT COUNT(*) AS total FROM articles');
+    return res.json({ total: Number(row?.total || 0) });
 });
+
+router.get('/digest', handleDigestRequest);
+router.get('/daily-digest', async (_req, res) => {
+    const payload = await buildDigestPayload('day');
+    return res.json(payload);
+});
+router.patch('/:id/digested', handleMarkArticleDigested);
+router.patch('/:id/daily-digested', handleMarkArticleDigested);
+router.post('/digest/mark-all-digested', handleMarkAllDigested);
+router.post('/daily-digest/mark-all-digested', handleMarkAllDigested);
 
 router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 100 } }, res) => {
     const params = [];

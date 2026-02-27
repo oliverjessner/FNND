@@ -7,6 +7,7 @@ import { publish } from './events.js';
 import { decodeBuffer, detectEncoding } from '../utils/encoding.js';
 
 const parser = new Parser({ timeout: 8000 });
+
 let lastFetchStatus = {
     at: null,
     durationMs: null,

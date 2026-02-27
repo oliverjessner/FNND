@@ -14,7 +14,7 @@
             </div>
 
             <nav class="nav">
-                <button class="nav-link" data-view="digest">Daily Digest</button>
+                <button class="nav-link" data-view="digest">Digest</button>
 
                 <button class="nav-link is-active" data-view="main">Dashboard</button>
                 <button class="nav-link" data-view="settings">Settings</button>
@@ -57,9 +57,39 @@
             <section id="view-digest" class="view view-digest">
                 <div class="digest-scroll">
                     <div class="digest-header">
-                        <h2 id="digest-title" class="digest-title">Lädt…</h2>
+                        <div
+                            id="digest-range-toggle"
+                            class="digest-sort-toggle digest-range-toggle"
+                            role="group"
+                            aria-label="Digest range"
+                        >
+                            <button
+                                class="digest-sort-option digest-control-option digest-range-option"
+                                data-digest-range="day"
+                                type="button"
+                                aria-pressed="true"
+                            >
+                                day
+                            </button>
+                            <button
+                                class="digest-sort-option digest-control-option digest-range-option"
+                                data-digest-range="week"
+                                type="button"
+                                aria-pressed="false"
+                            >
+                                week
+                            </button>
+                            <button
+                                class="digest-sort-option digest-control-option digest-range-option"
+                                data-digest-range="month"
+                                type="button"
+                                aria-pressed="false"
+                            >
+                                month
+                            </button>
+                        </div>
+                        <p id="digest-subtitle" class="digest-subtitle">Lädt…</p>
                         <div class="digest-header-meta">
-                            <p id="digest-subtitle" class="digest-subtitle">Lädt…</p>
                             <button id="digest-mark-all" class="btn ghost" type="button">Mark all as digested</button>
                             <div
                                 id="digest-sort-toggle"
@@ -68,7 +98,7 @@
                                 aria-label="Sort clusters"
                             >
                                 <button
-                                    class="digest-sort-option"
+                                    class="digest-sort-option digest-control-option"
                                     data-digest-sort="desc"
                                     type="button"
                                     aria-pressed="true"
@@ -76,7 +106,7 @@
                                     Descending
                                 </button>
                                 <button
-                                    class="digest-sort-option"
+                                    class="digest-sort-option digest-control-option"
                                     data-digest-sort="asc"
                                     type="button"
                                     aria-pressed="false"
@@ -100,7 +130,7 @@
                         </button>
                         <button class="settings-tab" data-settings="topics" type="button">Topics</button>
                         <button class="settings-tab" data-settings="lists" type="button">Lists</button>
-                        <button class="settings-tab" data-settings="digest" type="button">Daily Digest</button>
+                        <button class="settings-tab" data-settings="digest" type="button">Digest</button>
                         <button class="settings-tab" data-settings="cosmetics" type="button">Cosmetics</button>
                     </div>
                 </div>
@@ -174,7 +204,7 @@
                         <section class="card settings-digest-card">
                             <h3 class="title">Excluded RSS Feeds</h3>
                             <p class="teaser">
-                                Selected feeds are ignored in Daily Digest and will not appear in clustered results.
+                                Selected feeds are ignored in Digest and will not appear in clustered results.
                             </p>
                             <div id="digest-settings-feeds-state" class="form-status">Lädt…</div>
                             <div id="digest-settings-feeds-list" class="settings-digest-feed-list"></div>
@@ -188,8 +218,7 @@
                         <section class="card settings-digest-card">
                             <h3 class="title">Blocked Words</h3>
                             <p class="teaser">
-                                Articles containing one of these words in title or teaser are excluded from Daily
-                                Digest.
+                                Articles containing one of these words in title or teaser are excluded from Digest.
                             </p>
                             <div class="form-row">
                                 <label>Word</label>

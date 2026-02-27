@@ -115,6 +115,16 @@ function normalizeSelectionText(value) {
         .slice(0, 300);
 }
 
+function isToggleDevToolsShortcut(input) {
+    if (!input || input.type !== 'keyDown') {
+        return false;
+    }
+    const key = String(input.key || '').toLowerCase();
+    const isMacToggle = process.platform === 'darwin' && input.meta && input.alt && key === 'i';
+    const isF12 = key === 'f12';
+    return isMacToggle || isF12;
+}
+
 function pushSeparator(template) {
     if (template.length === 0) {
         return;
@@ -229,6 +239,14 @@ async function createWindow() {
             return;
         }
         Menu.buildFromTemplate(template).popup({ window: win });
+    });
+
+    win.webContents.on('before-input-event', (event, input) => {
+        if (!isToggleDevToolsShortcut(input)) {
+            return;
+        }
+        event.preventDefault();
+        win.webContents.toggleDevTools();
     });
 
     await waitForServer(PORT);
@@ -366,6 +384,10 @@ function buildAppMenu() {
         {
             label: 'File',
             submenu: [isMac ? { role: 'close' } : { role: 'quit' }],
+        },
+        {
+            label: 'View',
+            submenu: [{ role: 'toggleDevTools' }],
         },
         {
             label: 'Help',
