@@ -32,24 +32,24 @@
 
                         <input id="search-input" class="search-input" type="search" placeholder="Search…" />
 
-                        <select id="filter-list" class="select">
+                        <select id="filter-list" class="select" aria-label="Filter by list">
                             <option value="">all lists</option>
                         </select>
-                        <select id="filter-source" class="select">
+                        <select id="filter-source" class="select" aria-label="Filter by source">
                             <option value="">all sources</option>
                         </select>
-                        <select id="filter-topic" class="select">
+                        <select id="filter-topic" class="select" aria-label="Filter by topic">
                             <option value="">all topics</option>
                         </select>
 
                         <button id="run-fetch" class="btn danger" type="button">clear</button>
                     </div>
                 </div>
-                <div id="loading-row" class="loading-row">
+                <div id="loading-row" class="loading-row hide">
                     <span class="spinner" aria-hidden="true"></span>
                 </div>
                 <div class="articles-scroll">
-                    <h2 id="articles-state" class="state">Lädt…</h2>
+                    <h2 id="articles-state" class="state">Loading…</h2>
                     <div id="articles-list" class="cards"></div>
                 </div>
             </section>
@@ -88,7 +88,7 @@
                                 month
                             </button>
                         </div>
-                        <p id="digest-subtitle" class="digest-subtitle">Lädt…</p>
+                        <p id="digest-subtitle" class="digest-subtitle">Loading…</p>
                         <div class="digest-header-meta">
                             <button id="digest-mark-all" class="btn ghost" type="button">Mark all as digested</button>
                             <div
@@ -117,7 +117,7 @@
                         </div>
                     </div>
 
-                    <h2 id="digest-state" class="state">Lädt…</h2>
+                    <h2 id="digest-state" class="state">Loading…</h2>
                     <div id="digest-list" class="digest-clusters"></div>
                 </div>
             </section>
@@ -139,15 +139,15 @@
                     <div class="settings-feeds-left">
                         <form id="feed-form" class="card form">
                             <div class="form-row">
-                                <label>Name</label>
+                                <label for="feed-name">Name</label>
                                 <input type="text" id="feed-name" placeholder="z. B. techcrunch" required />
                             </div>
                             <div class="form-row">
-                                <label>Website URL</label>
+                                <label for="feed-website">Website URL</label>
                                 <input type="url" id="feed-website" placeholder="https://example.com" required />
                             </div>
                             <div class="form-row">
-                                <label>Feed URL</label>
+                                <label for="feed-url">Feed URL</label>
                                 <input type="url" id="feed-url" placeholder="https://example.com/feed.xml" required />
                             </div>
                             <div class="form-actions">
@@ -157,15 +157,15 @@
                             </div>
                             <div id="feed-form-status" class="form-status"></div>
                         </form>
-                        <div id="fetch-status" class="status-line">Letzter Fetch: —</div>
-                        <div id="article-count-status" class="status-line">Gespeicherte Artikel: —</div>
+                        <div id="fetch-status" class="status-line">Last fetch: —</div>
+                        <div id="article-count-status" class="status-line">Saved articles: —</div>
                         <div class="form-actions">
                             <button type="button" class="btn" id="settings-fetch-now">fetch now</button>
                         </div>
                     </div>
 
                     <div class="settings-feeds-content">
-                        <div id="feeds-state" class="state">Lädt…</div>
+                        <div id="feeds-state" class="state">Loading…</div>
                         <div id="feeds-list" class="list"></div>
                     </div>
                 </div>
@@ -174,15 +174,15 @@
                     <div class="settings-lists-left">
                         <form id="list-form" class="card form">
                             <div class="form-row">
-                                <label>Name</label>
+                                <label for="list-name">Name</label>
                                 <input type="text" id="list-name" placeholder="e. g. Readinglist" required />
                             </div>
                             <div class="form-row">
-                                <label>Description</label>
+                                <label for="list-description">Description</label>
                                 <input type="text" id="list-description" placeholder="optional" />
                             </div>
                             <div class="form-row">
-                                <label>Color</label>
+                                <label for="list-color">Color</label>
                                 <input type="color" class="color-picker" id="list-color" value="#1d1d1f" />
                             </div>
                             <div class="form-actions">
@@ -194,7 +194,7 @@
                     </div>
 
                     <div class="settings-lists-content">
-                        <div id="lists-state" class="state">Lädt…</div>
+                        <div id="lists-state" class="state">Loading…</div>
                         <div id="lists-list" class="list"></div>
                     </div>
                 </div>
@@ -206,7 +206,7 @@
                             <p class="teaser">
                                 Selected feeds are ignored in Digest and will not appear in clustered results.
                             </p>
-                            <div id="digest-settings-feeds-state" class="form-status">Lädt…</div>
+                            <div id="digest-settings-feeds-state" class="form-status">Loading…</div>
                             <div id="digest-settings-feeds-list" class="settings-digest-feed-list"></div>
                             <div class="form-actions">
                                 <button id="digest-settings-save-feeds" type="button" class="btn success">
@@ -221,7 +221,7 @@
                                 Articles containing one of these words in title or teaser are excluded from Digest.
                             </p>
                             <div class="form-row">
-                                <label>Word</label>
+                                <label for="digest-block-word-input">Word</label>
                                 <input
                                     type="text"
                                     id="digest-block-word-input"
@@ -231,7 +231,7 @@
                             <div class="form-actions">
                                 <button id="digest-block-word-add" type="button" class="btn success">add word</button>
                             </div>
-                            <div id="digest-block-words-state" class="form-status">Lädt…</div>
+                            <div id="digest-block-words-state" class="form-status">Loading…</div>
                             <div id="digest-block-words-list" class="settings-digest-block-list"></div>
                         </section>
                     </div>
@@ -241,15 +241,15 @@
                     <div class="settings-topics-left">
                         <form id="topic-form" class="card form">
                             <div class="form-row">
-                                <label>Slug</label>
+                                <label for="topic-slug">Slug</label>
                                 <input type="text" id="topic-slug" placeholder="e. g. ki" required />
                             </div>
                             <div class="form-row">
-                                <label>Label</label>
+                                <label for="topic-label">Label</label>
                                 <input type="text" id="topic-label" placeholder="e. g. KI" required />
                             </div>
                             <div class="form-row">
-                                <label>Strong keywords (comma or newline)</label>
+                                <label for="topic-strong">Strong keywords (comma or newline)</label>
                                 <textarea
                                     id="topic-strong"
                                     class="textarea"
@@ -258,7 +258,7 @@
                                 ></textarea>
                             </div>
                             <div class="form-row">
-                                <label>Medium keywords (comma or newline)</label>
+                                <label for="topic-medium">Medium keywords (comma or newline)</label>
                                 <textarea
                                     id="topic-medium"
                                     class="textarea"
@@ -267,7 +267,7 @@
                                 ></textarea>
                             </div>
                             <div class="form-row">
-                                <label>Weak keywords (comma or newline)</label>
+                                <label for="topic-weak">Weak keywords (comma or newline)</label>
                                 <textarea
                                     id="topic-weak"
                                     class="textarea"
@@ -312,7 +312,7 @@
                             </div>
                             <div id="topics-reprocess-status" class="form-status"></div>
                         </section>
-                        <div id="topics-state" class="state">Lädt…</div>
+                        <div id="topics-state" class="state">Loading…</div>
                         <div id="topics-list" class="list"></div>
                     </div>
                 </div>
@@ -369,17 +369,17 @@
                     <div class="list-meta"></div>
                 </div>
                 <div class="list-actions">
-                    <button class="btn ghost btn-edit">Bearbeiten</button>
-                    <button class="btn danger btn-delete">Löschen</button>
+                    <button class="btn ghost btn-edit">Edit</button>
+                    <button class="btn danger btn-delete">Delete</button>
                 </div>
             </div>
         </template>
 
         <div id="modal-backdrop" class="modal-backdrop" aria-hidden="true">
-            <div class="modal">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
                 <div class="modal-header">
-                    <div class="modal-title">Add to list</div>
-                    <button class="btn ghost" id="modal-close" type="button">✕</button>
+                    <div class="modal-title" id="modal-title">Add to list</div>
+                    <button class="btn ghost" id="modal-close" type="button" aria-label="Close dialog">✕</button>
                 </div>
                 <div class="modal-body">
                     <label for="modal-list-select">Choose list</label>
@@ -406,8 +406,8 @@
                     <div class="list-meta"></div>
                 </div>
                 <div class="list-actions">
-                    <button class="btn ghost btn-edit">Bearbeiten</button>
-                    <button class="btn danger btn-delete">Löschen</button>
+                    <button class="btn ghost btn-edit">Edit</button>
+                    <button class="btn danger btn-delete">Delete</button>
                 </div>
             </div>
         </template>
@@ -428,6 +428,6 @@
             </article>
         </template>
 
-        <script src="/app.js" type="module"></script>
+        <script defer src="/app.js" type="module"></script>
     </body>
 </html>

@@ -1,8 +1,16 @@
 ## 0.3.0
 
+Features:
+
+- Daily Digest for week and month
+
 Minor Fixes
 
 - Quality managament for all parts of the app
+- aria labels
+- sorted, cleaned up, millionen of ai slop lines
+- focus management in modal
+- massive perf improvement on large databases
 
 ## 0.2.0
 

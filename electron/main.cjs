@@ -3,9 +3,6 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
-
-app.setName('NO BULLSHIT RSS');
-
 const PORT = process.env.PORT || '1377';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -13,6 +10,8 @@ let serverProcess = null;
 let serverLogPath = null;
 let mainWindow = null;
 let aboutWindow = null;
+
+app.setName('NO BULLSHIT RSS');
 
 if (!gotSingleInstanceLock) {
     app.quit();
@@ -58,6 +57,7 @@ function startServer() {
     const dbPath = path.join(app.getPath('userData'), 'data.db');
     const topicRulesPath = path.join(app.getPath('userData'), 'topics.rules.json');
     const appPath = app.getAppPath();
+
     serverLogPath = path.join(app.getPath('userData'), 'server.log');
 
     const logMain = message => {
@@ -119,6 +119,7 @@ function isToggleDevToolsShortcut(input) {
     if (!input || input.type !== 'keyDown') {
         return false;
     }
+
     const key = String(input.key || '').toLowerCase();
     const isMacToggle = process.platform === 'darwin' && input.meta && input.alt && key === 'i';
     const isF12 = key === 'f12';
@@ -126,10 +127,12 @@ function isToggleDevToolsShortcut(input) {
 }
 
 function pushSeparator(template) {
+    const lastItem = template[template.length - 1];
+
     if (template.length === 0) {
         return;
     }
-    const lastItem = template[template.length - 1];
+
     if (lastItem.type !== 'separator') {
         template.push({ type: 'separator' });
     }
@@ -212,6 +215,7 @@ async function createWindow() {
             contextIsolation: true,
         },
     });
+
     mainWindow = win;
 
     if (process.platform === 'darwin' && app.dock && appIcon) {
@@ -307,7 +311,10 @@ function createAboutWindow() {
       </div>
     </div>
     <script>
-      document.getElementById('close').addEventListener('click', () => window.close());
+      const dom = Object.freeze({
+        closeButton: document.getElementById('close'),
+      });
+      dom.closeButton?.addEventListener('click', () => window.close());
     </script>
   </body>
 </html>`;

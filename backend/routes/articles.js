@@ -83,6 +83,97 @@ async function loadTopicsByArticleIds(articleIds) {
     return topicsByArticleId;
 }
 
+async function buildArticleListsBulkPayload(articleIds) {
+    const normalizedArticleIds = normalizeArticleIds(articleIds);
+    const listsByArticleId = new Map();
+    const listById = new Map();
+
+    if (normalizedArticleIds.length === 0) {
+        return {
+            articleIds: [],
+            listsByArticleId: {},
+            commonLists: [],
+        };
+    }
+
+    const articleIdChunks = chunkArray(normalizedArticleIds, 400);
+    for (const chunk of articleIdChunks) {
+        const placeholders = chunk.map(() => '?').join(', ');
+        const rows = await all(
+            `
+            SELECT
+                list_items.articleId AS articleId,
+                lists.id AS id,
+                lists.name AS name,
+                lists.color AS color
+            FROM list_items
+            JOIN lists ON lists.id = list_items.listId
+            WHERE list_items.articleId IN (${placeholders})
+            ORDER BY lists.name COLLATE NOCASE ASC, lists.id ASC
+            `,
+            chunk,
+        );
+
+        rows.forEach(row => {
+            const articleId = Number(row.articleId);
+            const listId = Number(row.id);
+
+            if (!Number.isInteger(articleId) || articleId <= 0) {
+                return;
+            }
+            if (!Number.isInteger(listId) || listId <= 0) {
+                return;
+            }
+
+            const normalizedList = {
+                id: listId,
+                name: row.name,
+                color: row.color,
+            };
+            const currentLists = listsByArticleId.get(articleId) || [];
+
+            if (!currentLists.some(list => Number(list.id) === listId)) {
+                currentLists.push(normalizedList);
+                listsByArticleId.set(articleId, currentLists);
+            }
+            if (!listById.has(listId)) {
+                listById.set(listId, normalizedList);
+            }
+        });
+    }
+
+    const listOccurrenceCount = new Map();
+    normalizedArticleIds.forEach(articleId => {
+        const articleLists = listsByArticleId.get(articleId) || [];
+        const uniqueListIds = new Set(articleLists.map(list => String(list.id)));
+
+        uniqueListIds.forEach(listId => {
+            listOccurrenceCount.set(listId, (listOccurrenceCount.get(listId) || 0) + 1);
+        });
+    });
+
+    const commonListIds = Array.from(listOccurrenceCount.entries())
+        .filter(([, count]) => count === normalizedArticleIds.length)
+        .map(([listId]) => Number(listId))
+        .filter(listId => Number.isInteger(listId) && listId > 0);
+    const commonLists = commonListIds
+        .map(listId => listById.get(listId))
+        .filter(Boolean)
+        .sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), 'en', { sensitivity: 'base' }));
+
+    const listsByArticleIdObject = {};
+    normalizedArticleIds.forEach(articleId => {
+        const articleLists = listsByArticleId.get(articleId) || [];
+        listsByArticleIdObject[String(articleId)] = articleLists;
+    });
+
+    return {
+        articleIds: normalizedArticleIds,
+        listsByArticleId: listsByArticleIdObject,
+        commonLists,
+    };
+}
+
 async function markArticlesAsDigestedInTransaction(articleIds) {
     const ids = normalizeArticleIds(articleIds);
     if (ids.length === 0) {
@@ -292,6 +383,13 @@ router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 
     }));
 
     return res.json(withTopics);
+});
+
+router.post('/lists/bulk', async ({ body }, res) => {
+    const articleIds = normalizeArticleIds(body?.articleIds);
+    const payload = await buildArticleListsBulkPayload(articleIds);
+
+    return res.json(payload);
 });
 
 router.get('/:id/lists', async ({ params: { id } }, res) => {

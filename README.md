@@ -27,14 +27,6 @@ also check out the [Landing page](https://oliverjessner.at/no-bullshit-rss/#prom
 npm run electron
 ```
 
-## build for electron (macOS local)
-
-```bash
-npm run dist:mac
-```
-
-`dist:mac` builds a macOS arm64 DMG only.
-
 ## build for electron (mac, win, linux)
 
 ```bash
@@ -46,8 +38,3 @@ npm run build:all
 ```bash
 npm run dist:all:workaround
 ```
-
-Optional per-platform scripts:
-
-- `npm run dist:win`
-- `npm run dist:linux`
