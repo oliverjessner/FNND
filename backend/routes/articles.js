@@ -1,7 +1,6 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
 import {
-    NORMALIZED_PUBLISHED_AT_SQL,
     clusterDigestArticles,
     getDigestRangeIso,
     mapArticleRow,
@@ -53,14 +52,14 @@ async function loadTopicsByArticleIds(articleIds) {
         const topicRows = await all(
             `
             SELECT
-                article_topics.article_id AS articleId,
-                article_topics.topic_slug AS topicSlug,
+                article_topics.articleId AS articleId,
+                article_topics.topicSlug AS topicSlug,
                 topics.label AS topicLabel,
                 article_topics.score AS score
             FROM article_topics
-            JOIN topics ON topics.slug = article_topics.topic_slug
-            WHERE article_topics.article_id IN (${placeholders})
-            ORDER BY article_topics.score DESC, article_topics.topic_slug ASC
+            JOIN topics ON topics.slug = article_topics.topicSlug
+            WHERE article_topics.articleId IN (${placeholders})
+            ORDER BY article_topics.score DESC, article_topics.topicSlug ASC
             `,
             chunk,
         );
@@ -207,37 +206,32 @@ async function buildDigestPayload(variant = 'day') {
     const { startIso, endIso } = getDigestRangeIso(normalizedVariant);
     const rows = await all(
         `
-        WITH normalized_articles AS (
-            SELECT
-                articles.*,
-                feeds.name as sourceName,
-                feeds.logo as sourceLogo,
-                feeds.logoMime as sourceLogoMime,
-                ${NORMALIZED_PUBLISHED_AT_SQL} AS publishedAtParsed
-            FROM articles
-            JOIN feeds ON feeds.id = articles.feedId
-        )
-        SELECT *
-        FROM normalized_articles
-        WHERE publishedAtParsed IS NOT NULL
-          AND COALESCE(dailyDigested, 0) = 0
-          AND publishedAtParsed >= datetime(?)
-          AND publishedAtParsed < datetime(?)
+        SELECT
+            articles.*,
+            feeds.name as sourceName,
+            feeds.logo as sourceLogo,
+            feeds.logoMime as sourceLogoMime
+        FROM articles
+        JOIN feeds ON feeds.id = articles.feedId
+        WHERE articles.publishedAt IS NOT NULL
+          AND articles.dailyDigested = 0
+          AND articles.publishedAt >= ?
+          AND articles.publishedAt < ?
           AND NOT EXISTS (
               SELECT 1
               FROM digest_excluded_feeds
-              WHERE digest_excluded_feeds.feedId = normalized_articles.feedId
+              WHERE digest_excluded_feeds.feedId = articles.feedId
           )
           AND NOT EXISTS (
               SELECT 1
               FROM digest_blocked_words
               WHERE length(trim(digest_blocked_words.word)) > 0
                 AND instr(
-                    lower(coalesce(normalized_articles.title, '') || ' ' || coalesce(normalized_articles.teaser, '')),
+                    lower(coalesce(articles.title, '') || ' ' || coalesce(articles.teaser, '')),
                     lower(trim(digest_blocked_words.word))
                 ) > 0
           )
-        ORDER BY publishedAtParsed DESC, id DESC
+        ORDER BY articles.publishedAt DESC, articles.id DESC
         `,
         [startIso, endIso],
     );
@@ -349,7 +343,7 @@ router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 
         params.push(listId);
     }
     if (topic) {
-        whereParts.push('EXISTS (SELECT 1 FROM article_topics WHERE article_topics.article_id = articles.id AND article_topics.topic_slug = ?)');
+        whereParts.push('EXISTS (SELECT 1 FROM article_topics WHERE article_topics.articleId = articles.id AND article_topics.topicSlug = ?)');
         params.push(String(topic).trim().toLowerCase());
     }
     if (query) {
@@ -365,7 +359,7 @@ router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 
     JOIN feeds ON feeds.id = articles.feedId
     LEFT JOIN list_items ON list_items.articleId = articles.id
     ${where}
-    ORDER BY datetime(articles.publishedAt) DESC, articles.id DESC
+    ORDER BY articles.publishedAt DESC, articles.id DESC
     LIMIT ?
   `;
     params.push(Number(limit) || 100);

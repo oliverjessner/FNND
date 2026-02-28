@@ -11,6 +11,7 @@ Minor Fixes
 - sorted, cleaned up, millionen of ai slop lines
 - focus management in modal
 - massive perf improvement on large databases
+- SQLite clean up
 
 ## 0.2.0
 

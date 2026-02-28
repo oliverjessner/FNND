@@ -141,29 +141,6 @@ const DIGEST_TITLE_ANCHOR_STOPWORDS = new Set([
     'first',
 ]);
 
-export const NORMALIZED_PUBLISHED_AT_SQL = `
-    CASE
-        WHEN articles.publishedAt IS NULL THEN NULL
-        WHEN typeof(articles.publishedAt) IN ('integer', 'real') THEN datetime(
-            CASE
-                WHEN CAST(articles.publishedAt AS INTEGER) > 9999999999
-                    THEN CAST(articles.publishedAt AS INTEGER) / 1000
-                ELSE CAST(articles.publishedAt AS INTEGER)
-            END,
-            'unixepoch'
-        )
-        WHEN trim(articles.publishedAt) != '' AND trim(articles.publishedAt) NOT GLOB '*[^0-9]*' THEN datetime(
-            CASE
-                WHEN length(trim(articles.publishedAt)) > 10
-                    THEN CAST(trim(articles.publishedAt) AS INTEGER) / 1000
-                ELSE CAST(trim(articles.publishedAt) AS INTEGER)
-            END,
-            'unixepoch'
-        )
-        ELSE datetime(articles.publishedAt)
-    END
-`;
-
 export function mapArticleRow(row) {
     const logoDataUrl =
         row.sourceLogo && row.sourceLogoMime

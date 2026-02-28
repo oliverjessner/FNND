@@ -19,14 +19,17 @@ CREATE TABLE IF NOT EXISTS articles (
   content TEXT,
   url TEXT UNIQUE,
   publishedAt TEXT,
-  guidOrHash TEXT UNIQUE,
+  guidOrHash TEXT NOT NULL UNIQUE CHECK (length(trim(guidOrHash)) > 0),
   dailyDigested INTEGER NOT NULL DEFAULT 0,
   createdAt TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (feedId) REFERENCES feeds(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_articles_publishedAt ON articles (publishedAt);
-CREATE INDEX IF NOT EXISTS idx_articles_feedId ON articles (feedId);
+CREATE INDEX IF NOT EXISTS idx_articles_publishedAt_id ON articles (publishedAt DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_feedId_publishedAt_id ON articles (feedId, publishedAt DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_undigested_published_id
+  ON articles (publishedAt DESC, id DESC)
+  WHERE dailyDigested = 0;
 
 CREATE TABLE IF NOT EXISTS lists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,16 +41,14 @@ CREATE TABLE IF NOT EXISTS lists (
 );
 
 CREATE TABLE IF NOT EXISTS list_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
   listId INTEGER NOT NULL,
   articleId INTEGER NOT NULL,
   createdAt TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (listId, articleId),
+  PRIMARY KEY (listId, articleId),
   FOREIGN KEY (listId) REFERENCES lists(id) ON DELETE CASCADE,
   FOREIGN KEY (articleId) REFERENCES articles(id) ON DELETE CASCADE
-);
+) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS idx_list_items_listId ON list_items (listId);
 CREATE INDEX IF NOT EXISTS idx_list_items_articleId ON list_items (articleId);
 
 CREATE TABLE IF NOT EXISTS digest_excluded_feeds (
@@ -66,22 +67,20 @@ CREATE TABLE IF NOT EXISTS topics (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slug TEXT NOT NULL UNIQUE,
   label TEXT NOT NULL,
-  config_json TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  configJson TEXT NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS article_topics (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  article_id INTEGER NOT NULL,
-  topic_slug TEXT NOT NULL,
+  articleId INTEGER NOT NULL,
+  topicSlug TEXT NOT NULL,
   score REAL NOT NULL,
-  matched_terms_json TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (article_id, topic_slug),
-  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
-  FOREIGN KEY (topic_slug) REFERENCES topics(slug) ON DELETE CASCADE
-);
+  matchedTermsJson TEXT NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (articleId, topicSlug),
+  FOREIGN KEY (articleId) REFERENCES articles(id) ON DELETE CASCADE,
+  FOREIGN KEY (topicSlug) REFERENCES topics(slug) ON DELETE CASCADE
+) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS idx_article_topics_article_id ON article_topics (article_id);
-CREATE INDEX IF NOT EXISTS idx_article_topics_topic_slug ON article_topics (topic_slug);
+CREATE INDEX IF NOT EXISTS idx_article_topics_topicSlug ON article_topics (topicSlug);

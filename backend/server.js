@@ -14,51 +14,52 @@ import { logLine } from './utils/logger.js';
 import { initDatabase } from '../scripts/init-db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, '..', 'public');
 const app = express();
 const PORT = process.env.PORT || 1377;
+
 let isManualFetchRunning = false;
 
-logLine(`starting pid=${process.pid} node=${process.version} cwd=${process.cwd()}`);
+function getStartMessage() {
+    return `starting pid=${process.pid} node=${process.version} cwd=${process.cwd()}`;
+}
 
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
-app.get('/api/health', (_, res) => res.json({ ok: true }));
-app.get('/api/fetch/status', (_, res) => res.json(getLastFetchStatus()));
-app.get('/api/events', (req, res) => {
+function sendSseUpdate(res, payload) {
+    res.write('event: update\n');
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function handleHealth(_req, res) {
+    return res.json({ ok: true });
+}
+
+function handleFetchStatus(_req, res) {
+    return res.json(getLastFetchStatus());
+}
+
+function handleEvents(req, res) {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const send = payload => {
-        res.write(`event: update\n`);
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    };
-
-    send({ event: 'connected', data: { at: new Date().toISOString() } });
+    sendSseUpdate(res, { event: 'connected', data: { at: new Date().toISOString() } });
 
     const unsubscribe = subscribe(payload => {
-        send(payload);
+        sendSseUpdate(res, payload);
     });
 
     const keepAlive = setInterval(() => {
-        res.write(`event: ping\ndata: {}\n\n`);
+        res.write('event: ping\ndata: {}\n\n');
     }, 25000);
 
     req.on('close', () => {
         clearInterval(keepAlive);
         unsubscribe();
     });
-});
+}
 
-app.use('/api/feeds', feedsRouter);
-app.use('/api/articles', articlesRouter);
-app.use('/api/lists', listsRouter);
-app.use('/api/digest-settings', digestSettingsRouter);
-app.use('/api/topics', topicsRouter);
-app.use('/api/webhook', webhookRouter);
-
-app.post('/api/fetch/run', async (req, res, next) => {
+async function handleFetchRun(_req, res) {
     if (isManualFetchRunning) {
         return res.status(409).json({ error: 'Fetch already running' });
     }
@@ -67,18 +68,18 @@ app.post('/api/fetch/run', async (req, res, next) => {
 
     try {
         await updateAllFeeds();
-        res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true });
     } catch (err) {
-        res.status(500).json({ error: err.message || 'Fetch failed' });
+        return res.status(500).json({ error: err.message || 'Fetch failed' });
     } finally {
         isManualFetchRunning = false;
     }
-});
+}
 
-app.use((err, req, res, next) => {
+function handleUnhandledError(err, _req, res, _next) {
     console.error('Unhandled error:', err);
-    res.status(500).json({ error: err?.message || 'Unexpected server error' });
-});
+    return res.status(500).json({ error: err?.message || 'Unexpected server error' });
+}
 
 async function start() {
     const msg = `Server running at http://localhost:${PORT}`;
@@ -91,11 +92,34 @@ async function start() {
     });
 }
 
+function registerProcessHandlers() {
+    process.on('uncaughtException', err => logLine(`uncaughtException: ${err?.stack || err?.message || String(err)}`));
+    process.on('unhandledRejection', err =>
+        logLine(`unhandledRejection: ${err?.stack || err?.message || String(err)}`),
+    );
+}
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(publicDir));
+app.use('/api/feeds', feedsRouter);
+app.use('/api/articles', articlesRouter);
+app.use('/api/lists', listsRouter);
+app.use('/api/digest-settings', digestSettingsRouter);
+app.use('/api/topics', topicsRouter);
+app.use('/api/webhook', webhookRouter);
+
+app.get('/api/health', handleHealth);
+app.get('/api/fetch/status', handleFetchStatus);
+app.get('/api/events', handleEvents);
+
+app.post('/api/fetch/run', handleFetchRun);
+
+app.use(handleUnhandledError);
+
+logLine(getStartMessage());
+registerProcessHandlers();
 start().catch(err => {
     console.error('Failed to start server:', err);
     logLine(`Failed to start server: ${err?.stack || err?.message || String(err)}`);
     return process.exit(1);
 });
-
-process.on('uncaughtException', err => logLine(`uncaughtException: ${err?.stack || err?.message || String(err)}`));
-process.on('unhandledRejection', err => logLine(`unhandledRejection: ${err?.stack || err?.message || String(err)}`));

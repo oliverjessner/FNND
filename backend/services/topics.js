@@ -225,7 +225,7 @@ async function writeTopicRulesFile(definitions) {
 function parseTopicRow(row) {
     let config = {};
     try {
-        config = JSON.parse(row.config_json || '{}');
+        config = JSON.parse(row.configJson || '{}');
     } catch {
         config = {};
     }
@@ -239,7 +239,7 @@ function parseTopicRow(row) {
 }
 
 async function getTopicDefinitionsFromDatabase() {
-    const rows = await all('SELECT id, slug, label, config_json, created_at, updated_at FROM topics ORDER BY slug ASC');
+    const rows = await all('SELECT id, slug, label, configJson, createdAt, updatedAt FROM topics ORDER BY slug ASC');
     const definitions = [];
     rows.forEach(row => {
         try {
@@ -270,12 +270,12 @@ async function saveTopicDefinitionsToDatabase(definitions) {
             });
 
             await run(
-                `INSERT INTO topics (slug, label, config_json, created_at, updated_at)
+                `INSERT INTO topics (slug, label, configJson, createdAt, updatedAt)
                  VALUES (?, ?, ?, datetime('now'), datetime('now'))
                  ON CONFLICT(slug) DO UPDATE SET
                      label = excluded.label,
-                     config_json = excluded.config_json,
-                     updated_at = datetime('now')`,
+                     configJson = excluded.configJson,
+                     updatedAt = datetime('now')`,
                 [topic.slug, topic.label, configJson],
             );
         }
@@ -338,7 +338,7 @@ export async function getTopicDefinitions({ force = false } = {}) {
 }
 
 export async function getTopicRowsWithMetadata() {
-    const rows = await all('SELECT id, slug, label, config_json, created_at, updated_at FROM topics ORDER BY slug ASC');
+    const rows = await all('SELECT id, slug, label, configJson, createdAt, updatedAt FROM topics ORDER BY slug ASC');
     const normalizedRows = [];
     rows.forEach(row => {
         try {
@@ -350,8 +350,8 @@ export async function getTopicRowsWithMetadata() {
                 strong: parsed.strong,
                 medium: parsed.medium,
                 weak: parsed.weak,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
+                createdAt: row.createdAt,
+                updatedAt: row.updatedAt,
             });
         } catch (err) {
             logWarn('Skipping invalid topic row in metadata query', { slug: row.slug, error: err.message });
@@ -631,7 +631,7 @@ export async function replaceArticleTopics(articleId, classification) {
         throw new Error('replaceArticleTopics requires a valid article id');
     }
 
-    await run('DELETE FROM article_topics WHERE article_id = ?', [normalizedArticleId]);
+    await run('DELETE FROM article_topics WHERE articleId = ?', [normalizedArticleId]);
 
     const assignedTopics = Array.isArray(classification?.assignedTopics) ? classification.assignedTopics : [];
     for (const topic of assignedTopics) {
@@ -643,7 +643,7 @@ export async function replaceArticleTopics(articleId, classification) {
 
         await run(
             `INSERT OR REPLACE INTO article_topics
-             (article_id, topic_slug, score, matched_terms_json, created_at)
+             (articleId, topicSlug, score, matchedTermsJson, createdAt)
              VALUES (?, ?, ?, ?, datetime('now'))`,
             [normalizedArticleId, topic.slug, topic.score, matchedTermsJson],
         );
@@ -677,33 +677,33 @@ export async function getArticleTopics(articleId) {
     }
 
     const rows = await all(
-        `SELECT article_topics.article_id,
-                article_topics.topic_slug,
+        `SELECT article_topics.articleId,
+                article_topics.topicSlug,
                 article_topics.score,
-                article_topics.matched_terms_json,
-                article_topics.created_at,
+                article_topics.matchedTermsJson,
+                article_topics.createdAt,
                 topics.label
          FROM article_topics
-         JOIN topics ON topics.slug = article_topics.topic_slug
-         WHERE article_topics.article_id = ?
-         ORDER BY article_topics.score DESC, article_topics.topic_slug ASC`,
+         JOIN topics ON topics.slug = article_topics.topicSlug
+         WHERE article_topics.articleId = ?
+         ORDER BY article_topics.score DESC, article_topics.topicSlug ASC`,
         [normalizedArticleId],
     );
 
     return rows.map(row => {
         let matchedTerms = {};
         try {
-            matchedTerms = JSON.parse(row.matched_terms_json || '{}');
+            matchedTerms = JSON.parse(row.matchedTermsJson || '{}');
         } catch {
             matchedTerms = {};
         }
         return {
-            articleId: Number(row.article_id),
-            topicSlug: row.topic_slug,
+            articleId: Number(row.articleId),
+            topicSlug: row.topicSlug,
             topicLabel: row.label,
             score: Number(row.score || 0),
             matchedTerms,
-            createdAt: row.created_at,
+            createdAt: row.createdAt,
         };
     });
 }
@@ -734,7 +734,7 @@ export async function reprocessTopicClassificationForAllArticles() {
                 counters.topicAssignments += 1;
                 await run(
                     `INSERT OR REPLACE INTO article_topics
-                     (article_id, topic_slug, score, matched_terms_json, created_at)
+                     (articleId, topicSlug, score, matchedTermsJson, createdAt)
                      VALUES (?, ?, ?, ?, datetime('now'))`,
                     [
                         article.id,
@@ -824,7 +824,7 @@ export async function getTopicBySlug(slug) {
         return null;
     }
 
-    const row = await get('SELECT id, slug, label, config_json, created_at, updated_at FROM topics WHERE slug = ?', [
+    const row = await get('SELECT id, slug, label, configJson, createdAt, updatedAt FROM topics WHERE slug = ?', [
         normalizedSlug,
     ]);
 
@@ -840,8 +840,8 @@ export async function getTopicBySlug(slug) {
         strong: parsed.strong,
         medium: parsed.medium,
         weak: parsed.weak,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
     };
 }
 

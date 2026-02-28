@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const PORT = process.env.PORT || '1377';
+const APP_NAME = 'NO BULLSHIT RSS';
+const USER_DATA_DIR_NAME = 'NO-BULLSHIT-RSS';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 let serverProcess = null;
@@ -11,7 +13,9 @@ let serverLogPath = null;
 let mainWindow = null;
 let aboutWindow = null;
 
-app.setName('NO BULLSHIT RSS');
+app.setName(APP_NAME);
+app.setPath('userData', path.join(app.getPath('appData'), USER_DATA_DIR_NAME));
+fs.mkdirSync(app.getPath('userData'), { recursive: true });
 
 if (!gotSingleInstanceLock) {
     app.quit();

@@ -3,11 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     all,
-    ensureArticleContentColumn,
-    ensureArticleDailyDigestedColumn,
-    ensureFeedLogoColumns,
-    ensureListColorColumn,
-    ensureTopicsTables,
     initSchema,
     run,
 } from '../backend/database/datenbank.js';
@@ -40,11 +35,6 @@ async function seedFeeds() {
 
 export async function initDatabase() {
     await initSchema();
-    await ensureFeedLogoColumns();
-    await ensureListColorColumn();
-    await ensureArticleContentColumn();
-    await ensureArticleDailyDigestedColumn();
-    await ensureTopicsTables();
     await ensureTopicDefinitionsInitialized();
     await seedFeeds();
 }
