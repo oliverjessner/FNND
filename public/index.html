@@ -45,12 +45,55 @@
                         <button id="run-fetch" class="btn danger" type="button">clear</button>
                     </div>
                 </div>
-                <div id="loading-row" class="loading-row hide">
-                    <span class="spinner" aria-hidden="true"></span>
-                </div>
-                <div class="articles-scroll">
-                    <h2 id="articles-state" class="state">Loading…</h2>
-                    <div id="articles-list" class="cards"></div>
+                <div id="dashboard-layout" class="dashboard-layout">
+                    <div class="dashboard-primary">
+                        <div id="loading-row" class="loading-row hide">
+                            <span class="spinner" aria-hidden="true"></span>
+                        </div>
+                        <div class="articles-scroll">
+                            <h2 id="articles-state" class="state">Loading…</h2>
+                            <div id="articles-list" class="cards"></div>
+                        </div>
+                    </div>
+                    <aside id="article-viewer" class="article-viewer hide" aria-live="polite">
+                        <div class="article-viewer-header">
+                            <h2 id="article-viewer-title" class="article-viewer-title">Article viewer</h2>
+                            <div class="article-viewer-controls">
+                                <div
+                                    id="article-viewer-width-toggle"
+                                    class="article-viewer-width-toggle"
+                                    role="group"
+                                    aria-label="Viewer width"
+                                >
+                                    <button
+                                        class="article-viewer-width-option"
+                                        data-viewer-width="35"
+                                        type="button"
+                                        aria-pressed="false"
+                                    >
+                                        35%
+                                    </button>
+                                    <button
+                                        class="article-viewer-width-option"
+                                        data-viewer-width="50"
+                                        type="button"
+                                        aria-pressed="true"
+                                    >
+                                        50%
+                                    </button>
+                                </div>
+                                <button id="article-viewer-hide" class="btn ghost" type="button">Hide</button>
+                            </div>
+                        </div>
+                        <p id="article-viewer-message" class="article-viewer-message hide"></p>
+                        <webview
+                            id="article-viewer-frame"
+                            class="article-viewer-frame hide"
+                            title="In-app article viewer"
+                            src="about:blank"
+                            partition="persist:article-viewer"
+                        ></webview>
+                    </aside>
                 </div>
             </section>
 
@@ -117,8 +160,51 @@
                         </div>
                     </div>
 
-                    <h2 id="digest-state" class="state">Loading…</h2>
-                    <div id="digest-list" class="digest-clusters"></div>
+                    <div id="digest-layout" class="dashboard-layout digest-layout">
+                        <div class="dashboard-primary">
+                            <h2 id="digest-state" class="state">Loading…</h2>
+                            <div id="digest-list" class="digest-clusters"></div>
+                        </div>
+                        <aside id="digest-article-viewer" class="article-viewer hide" aria-live="polite">
+                            <div class="article-viewer-header">
+                                <h2 id="digest-article-viewer-title" class="article-viewer-title">Article viewer</h2>
+                                <div class="article-viewer-controls">
+                                    <div
+                                        id="digest-article-viewer-width-toggle"
+                                        class="article-viewer-width-toggle"
+                                        role="group"
+                                        aria-label="Viewer width"
+                                    >
+                                        <button
+                                            class="article-viewer-width-option"
+                                            data-viewer-width="35"
+                                            type="button"
+                                            aria-pressed="false"
+                                        >
+                                            35%
+                                        </button>
+                                        <button
+                                            class="article-viewer-width-option"
+                                            data-viewer-width="50"
+                                            type="button"
+                                            aria-pressed="true"
+                                        >
+                                            50%
+                                        </button>
+                                    </div>
+                                    <button id="digest-article-viewer-hide" class="btn ghost" type="button">Hide</button>
+                                </div>
+                            </div>
+                            <p id="digest-article-viewer-message" class="article-viewer-message hide"></p>
+                            <webview
+                                id="digest-article-viewer-frame"
+                                class="article-viewer-frame hide"
+                                title="In-app article viewer"
+                                src="about:blank"
+                                partition="persist:article-viewer"
+                            ></webview>
+                        </aside>
+                    </div>
                 </div>
             </section>
 
@@ -353,8 +439,15 @@
                     <p class="teaser"></p>
                 </div>
                 <div class="actions">
-                    <a class="link" target="_blank" rel="noopener noreferrer">read article</a>
-                    <button class="btn ghost btn-add" type="button">+</button>
+                    <button class="link btn-read" type="button">read article</button>
+                    <button
+                        class="btn ghost btn-icon article-action-btn btn-open-external"
+                        type="button"
+                        title="Open external"
+                    >
+                        ↗
+                    </button>
+                    <button class="btn ghost btn-add article-action-btn" type="button">+</button>
                 </div>
             </article>
         </template>

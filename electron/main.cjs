@@ -209,14 +209,15 @@ async function createWindow() {
     const appIcon = nativeImage.createFromPath(iconPath);
     const win = new BrowserWindow({
         width: 1480,
-        height: 1000,
-        minWidth: 720,
-        minHeight: 500,
+        height: 1050,
+        minWidth: 1280,
+        minHeight: 740,
         backgroundColor: '#f7f8fa',
         icon: appIcon,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            webviewTag: true,
         },
     });
 
@@ -433,6 +434,19 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
     }
+});
+
+app.on('web-contents-created', (_event, contents) => {
+    if (contents.getType() !== 'webview') {
+        return;
+    }
+
+    contents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith('http')) {
+            shell.openExternal(url);
+        }
+        return { action: 'deny' };
+    });
 });
 
 app.on('before-quit', () => {

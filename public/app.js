@@ -31,6 +31,16 @@ const dom = Object.freeze({
         settingsFetchNowBtn: document.getElementById('settings-fetch-now'),
         searchInput: document.getElementById('search-input'),
         loadingRow: document.getElementById('loading-row'),
+        dashboardLayout: document.getElementById('dashboard-layout'),
+        articleViewer: document.getElementById('article-viewer'),
+        articleViewerTitle: document.getElementById('article-viewer-title'),
+        articleViewerMessage: document.getElementById('article-viewer-message'),
+        articleViewerFrame: document.getElementById('article-viewer-frame'),
+        articleViewerHideBtn: document.getElementById('article-viewer-hide'),
+        articleViewerWidthToggle: document.getElementById('article-viewer-width-toggle'),
+        articleViewerWidthOptions: document.querySelectorAll(
+            '#article-viewer-width-toggle .article-viewer-width-option',
+        ),
         feedForm: document.getElementById('feed-form'),
         feedName: document.getElementById('feed-name'),
         feedWebsite: document.getElementById('feed-website'),
@@ -79,6 +89,16 @@ const dom = Object.freeze({
     digest: Object.freeze({
         state: document.getElementById('digest-state'),
         list: document.getElementById('digest-list'),
+        layout: document.getElementById('digest-layout'),
+        viewer: document.getElementById('digest-article-viewer'),
+        viewerTitle: document.getElementById('digest-article-viewer-title'),
+        viewerMessage: document.getElementById('digest-article-viewer-message'),
+        viewerFrame: document.getElementById('digest-article-viewer-frame'),
+        viewerHideBtn: document.getElementById('digest-article-viewer-hide'),
+        viewerWidthToggle: document.getElementById('digest-article-viewer-width-toggle'),
+        viewerWidthOptions: document.querySelectorAll(
+            '#digest-article-viewer-width-toggle .article-viewer-width-option',
+        ),
         subtitle: document.getElementById('digest-subtitle'),
         markAllBtn: document.getElementById('digest-mark-all'),
         rangeToggle: document.getElementById('digest-range-toggle'),
@@ -111,6 +131,7 @@ const localStorageKeys = Object.freeze({
     digestSortKey: 'fnnd.digestSort',
     digestRangeKey: 'fnnd.digestRange',
     themeKey: 'fnnd.theme',
+    viewerWidthKey: 'fnnd.viewerWidth',
 });
 const CONFIG = Object.freeze({
     SEARCH_DEBOUNCE_MS: 400,
@@ -130,12 +151,14 @@ const digestRuntime = Object.seal({
     lastRenderFingerprint: '',
     pendingMutationEventsToSkip: 0,
     isRangeSwitchLoading: false,
+    articleById: new Map(),
 });
 const articlesRuntime = Object.seal({
     lastRequestKey: '',
     lastRenderFingerprint: '',
     requestId: 0,
     activeRequestController: null,
+    articleById: new Map(),
 });
 const modalRuntime = Object.seal({
     lastFocusedElement: null,
@@ -154,6 +177,12 @@ let articlesNeedsRefresh = true;
 let pendingArticleIds = [];
 let clearDashboardPromise = null;
 let isStickySubnavScrollUpdateScheduled = false;
+let viewerOpen = false;
+let viewerUrl = null;
+let activeArticleId = null;
+let viewerTitle = 'Article viewer';
+let viewerMessage = '';
+let viewerWidth = normalizeViewerWidth(localStorage.getItem(localStorageKeys.viewerWidthKey));
 
 function normalizeDigestRange(value) {
     const normalized = String(value || '')
@@ -168,6 +197,84 @@ function normalizeDigestRange(value) {
     }
 
     return 'day';
+}
+
+function normalizeViewerWidth(value) {
+    const normalized = String(value || '')
+        .trim()
+        .replace('%', '');
+
+    if (normalized === '35' || normalized === '25') {
+        return '35';
+    }
+
+    return '50';
+}
+
+function getEffectiveViewerWidth() {
+    return viewerWidth;
+}
+
+function getViewerWidthOptions() {
+    const options = [];
+    const dashboardWidthOptions = dom.elements.articleViewerWidthOptions;
+    const digestWidthOptions = dom.digest.viewerWidthOptions;
+
+    if (dashboardWidthOptions && dashboardWidthOptions.length > 0) {
+        options.push(...dashboardWidthOptions);
+    }
+    if (digestWidthOptions && digestWidthOptions.length > 0) {
+        options.push(...digestWidthOptions);
+    }
+
+    return options;
+}
+
+function updateViewerWidthUi() {
+    const widthOptions = getViewerWidthOptions();
+    const effectiveViewerWidth = getEffectiveViewerWidth();
+
+    if (!widthOptions || widthOptions.length === 0) {
+        return;
+    }
+
+    widthOptions.forEach(option => {
+        const isActive = normalizeViewerWidth(option.dataset.viewerWidth) === effectiveViewerWidth;
+
+        option.classList.toggle('is-active', isActive);
+        option.setAttribute('aria-pressed', String(isActive));
+    });
+}
+
+function updateViewerWidthAvailability() {
+    const widthOptions = getViewerWidthOptions();
+
+    if (!widthOptions || widthOptions.length === 0) {
+        return;
+    }
+
+    widthOptions.forEach(option => {
+        option.disabled = false;
+        option.removeAttribute('title');
+    });
+}
+
+function applyViewerWidthState() {
+    const layoutElements = [dom.elements.dashboardLayout, dom.digest.layout];
+    const effectiveViewerWidth = getEffectiveViewerWidth();
+
+    if (!layoutElements.some(Boolean)) {
+        return;
+    }
+
+    layoutElements.forEach(layoutElement => {
+        if (!layoutElement) {
+            return;
+        }
+
+        layoutElement.dataset.viewerWidth = effectiveViewerWidth;
+    });
+    updateViewerWidthUi();
 }
 
 function getDigestRangeLabel(range = digestRange) {
@@ -483,6 +590,10 @@ function setView(name) {
     scrollArticlesToTop();
     updateStickySubnavScrollState();
 
+    if (name === 'main' || name === 'digest') {
+        renderArticleViewer();
+    }
+
     if (name === 'main' && articlesNeedsRefresh) {
         loadArticles();
     }
@@ -512,7 +623,7 @@ function applyLayoutState() {
         dom.elements.toggleLayoutBtn,
         isListLayout,
         {
-            onLabel: 'Liste',
+            onLabel: 'List',
             offLabel: 'Cards',
             onValue: 'list',
             offValue: 'cards',
@@ -533,6 +644,9 @@ function applyLayoutState() {
             'themeMode',
         );
     }
+
+    updateViewerWidthAvailability();
+    applyViewerWidthState();
 }
 
 function applyThemeState() {
@@ -1609,6 +1723,236 @@ function getArticlesPayloadFingerprint(articles) {
         .join('||');
 }
 
+function normalizeArticleUrl(value) {
+    const rawValue = String(value || '').trim();
+    let parsedUrl = null;
+
+    if (!rawValue) {
+        return null;
+    }
+
+    try {
+        parsedUrl = new URL(rawValue);
+    } catch {
+        return null;
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        return null;
+    }
+
+    return parsedUrl.toString();
+}
+
+function getArticleById(articleId) {
+    const normalizedArticleId = Number(articleId);
+    let article = null;
+
+    if (!Number.isInteger(normalizedArticleId) || normalizedArticleId <= 0) {
+        return null;
+    }
+
+    article = articlesRuntime.articleById.get(normalizedArticleId) || null;
+
+    if (article) {
+        return article;
+    }
+
+    return digestRuntime.articleById.get(normalizedArticleId) || null;
+}
+
+function setActiveArticleCardState() {
+    const cards = dom.elements.articlesList?.querySelectorAll('.card[data-article-id]') || [];
+    const normalizedActiveArticleId = Number(activeArticleId);
+    const hasActiveArticleId = Number.isInteger(normalizedActiveArticleId) && normalizedActiveArticleId > 0;
+
+    cards.forEach(card => {
+        const cardArticleId = Number(card.dataset.articleId);
+        const isActive = viewerOpen && hasActiveArticleId && cardArticleId === normalizedActiveArticleId;
+
+        card.classList.toggle('is-active', isActive);
+    });
+}
+
+function setActiveDigestItemCardState() {
+    const cards = dom.digest.list?.querySelectorAll('.digest-item-card[data-article-id]') || [];
+    const normalizedActiveArticleId = Number(activeArticleId);
+    const hasActiveArticleId = Number.isInteger(normalizedActiveArticleId) && normalizedActiveArticleId > 0;
+    const isDigestView = isViewActive('digest');
+
+    cards.forEach(card => {
+        const cardArticleId = Number(card.dataset.articleId);
+        const isActive =
+            viewerOpen && isDigestView && hasActiveArticleId && cardArticleId === normalizedActiveArticleId;
+
+        card.classList.toggle('is-active', isActive);
+    });
+}
+
+function getViewerContexts() {
+    const contexts = [];
+
+    if (
+        dom.elements.dashboardLayout &&
+        dom.elements.articleViewer &&
+        dom.elements.articleViewerTitle &&
+        dom.elements.articleViewerMessage &&
+        dom.elements.articleViewerFrame
+    ) {
+        contexts.push({
+            viewName: 'main',
+            layoutElement: dom.elements.dashboardLayout,
+            panel: dom.elements.articleViewer,
+            title: dom.elements.articleViewerTitle,
+            message: dom.elements.articleViewerMessage,
+            frame: dom.elements.articleViewerFrame,
+        });
+    }
+
+    if (
+        dom.digest.layout &&
+        dom.digest.viewer &&
+        dom.digest.viewerTitle &&
+        dom.digest.viewerMessage &&
+        dom.digest.viewerFrame
+    ) {
+        contexts.push({
+            viewName: 'digest',
+            layoutElement: dom.digest.layout,
+            panel: dom.digest.viewer,
+            title: dom.digest.viewerTitle,
+            message: dom.digest.viewerMessage,
+            frame: dom.digest.viewerFrame,
+        });
+    }
+
+    return contexts;
+}
+
+function renderArticleViewer() {
+    const contexts = getViewerContexts();
+    const activeViewName = isViewActive('digest') ? 'digest' : isViewActive('main') ? 'main' : '';
+    const hasValidViewerUrl = Boolean(viewerUrl);
+    const hasViewerMessage = Boolean(String(viewerMessage || '').trim());
+
+    if (contexts.length === 0) {
+        return;
+    }
+
+    applyViewerWidthState();
+    contexts.forEach(context => {
+        const isActiveContext = context.viewName === activeViewName;
+        const isVisible = viewerOpen && isActiveContext;
+
+        context.layoutElement.classList.toggle('is-viewer-open', isVisible);
+        writeContent(context.title, viewerTitle || 'Article viewer');
+
+        if (isVisible) {
+            show(context.panel);
+        } else {
+            hide(context.panel);
+            hide(context.message);
+            hide(context.frame);
+            writeContent(context.message, '');
+            context.frame.removeAttribute('src');
+            context.frame.removeAttribute('data-loaded-url');
+            return;
+        }
+
+        if (hasValidViewerUrl) {
+            const loadedUrl = String(context.frame.dataset.loadedUrl || '');
+
+            if (loadedUrl !== viewerUrl) {
+                context.frame.src = viewerUrl;
+                context.frame.dataset.loadedUrl = viewerUrl;
+            }
+            hide(context.message);
+            show(context.frame);
+            return;
+        }
+
+        context.frame.removeAttribute('src');
+        context.frame.removeAttribute('data-loaded-url');
+        hide(context.frame);
+        writeContent(context.message, hasViewerMessage ? viewerMessage : 'No article selected.');
+        show(context.message);
+    });
+
+    setActiveArticleCardState();
+    setActiveDigestItemCardState();
+}
+
+function hideArticleViewer() {
+    viewerOpen = false;
+    viewerUrl = null;
+    activeArticleId = null;
+    viewerTitle = 'Article viewer';
+    viewerMessage = '';
+
+    renderArticleViewer();
+}
+
+function openArticleInViewer(articleId) {
+    const article = getArticleById(articleId);
+    const normalizedArticleId = Number(article?.id);
+    const articleTitle = String(article?.title || 'Untitled').trim() || 'Untitled';
+    const normalizedUrl = normalizeArticleUrl(article?.url);
+
+    if (!Number.isInteger(normalizedArticleId) || normalizedArticleId <= 0) {
+        return;
+    }
+
+    viewerOpen = true;
+    viewerUrl = normalizedUrl;
+    activeArticleId = normalizedArticleId;
+    viewerTitle = articleTitle;
+    viewerMessage = normalizedUrl ? '' : 'This article has no valid URL for the in-app viewer.';
+
+    renderArticleViewer();
+}
+
+function openArticleExternal(articleId) {
+    const article = getArticleById(articleId);
+    const normalizedArticleId = Number(article?.id);
+    const articleTitle = String(article?.title || 'Untitled').trim() || 'Untitled';
+    const normalizedUrl = normalizeArticleUrl(article?.url);
+
+    if (!Number.isInteger(normalizedArticleId) || normalizedArticleId <= 0) {
+        return;
+    }
+
+    if (!normalizedUrl) {
+        viewerOpen = true;
+        viewerUrl = null;
+        activeArticleId = normalizedArticleId;
+        viewerTitle = articleTitle;
+        viewerMessage = 'This article has no valid URL to open externally.';
+        renderArticleViewer();
+        return;
+    }
+
+    window.open(normalizedUrl, '_blank', 'noopener,noreferrer');
+}
+
+function openDigestItemCardInViewer(itemCard) {
+    const articleId = Number(itemCard?.dataset.articleId);
+    const hasArticleId = Number.isInteger(articleId) && articleId > 0;
+    const itemTitle = String(itemCard?.dataset.itemTitle || 'Untitled').trim() || 'Untitled';
+    const normalizedUrl = normalizeArticleUrl(itemCard?.dataset.itemUrl);
+
+    if (hasArticleId) {
+        openArticleInViewer(articleId);
+        return;
+    }
+
+    viewerOpen = true;
+    viewerUrl = normalizedUrl;
+    activeArticleId = null;
+    viewerTitle = itemTitle;
+    viewerMessage = normalizedUrl ? '' : 'This article has no valid URL for the in-app viewer.';
+    renderArticleViewer();
+}
+
 async function openDashboardWithTopicFilter(topicSlug, { switchToMain = false } = {}) {
     if (!dom.elements.filterTopic) {
         return;
@@ -1690,21 +2034,25 @@ function renderArticles(articles, { requestKey = '' } = {}) {
     const normalizedArticles = Array.isArray(articles) ? articles : [];
     const normalizedRequestKey = String(requestKey || '');
     const nextFingerprint = getArticlesPayloadFingerprint(normalizedArticles);
+    const articleById = new Map();
     const shouldSkipRender =
         articlesRuntime.lastRequestKey === normalizedRequestKey &&
         articlesRuntime.lastRenderFingerprint === nextFingerprint;
 
     if (shouldSkipRender) {
+        setActiveArticleCardState();
         return false;
     }
 
     articlesRuntime.lastRequestKey = normalizedRequestKey;
     articlesRuntime.lastRenderFingerprint = nextFingerprint;
+    articlesRuntime.articleById = articleById;
     dom.elements.articlesList.innerHTML = '';
 
     if (normalizedArticles.length === 0) {
         writeContent(dom.elements.articlesState, 'Nothing found, try other search input or delete all');
         show(dom.elements.articlesState);
+        renderArticleViewer();
         return true;
     }
 
@@ -1714,6 +2062,21 @@ function renderArticles(articles, { requestKey = '' } = {}) {
 
     normalizedArticles.forEach(article => {
         const node = template.content.cloneNode(true);
+        const articleId = Number(article.id);
+        const hasArticleId = Number.isInteger(articleId) && articleId > 0;
+        const card = node.querySelector('.card');
+
+        if (hasArticleId) {
+            articleById.set(articleId, article);
+        }
+
+        if (card) {
+            if (hasArticleId) {
+                card.dataset.articleId = String(articleId);
+            } else {
+                card.removeAttribute('data-article-id');
+            }
+        }
 
         node.querySelector('.meta-date').textContent = formatDate(article.publishedAt);
 
@@ -1786,19 +2149,34 @@ function renderArticles(articles, { requestKey = '' } = {}) {
             contentEl.appendChild(topicRow);
         }
 
-        const link = node.querySelector('.link');
+        const readBtn = node.querySelector('.btn-read');
+        const externalBtn = node.querySelector('.btn-open-external');
         const addBtn = node.querySelector('.btn-add');
 
-        if (article.url) {
-            link.href = article.url;
-        } else {
-            link.remove();
+        if (readBtn) {
+            if (hasArticleId) {
+                readBtn.dataset.articleId = String(articleId);
+                readBtn.disabled = false;
+            } else {
+                readBtn.disabled = true;
+                readBtn.removeAttribute('data-article-id');
+            }
+        }
+
+        if (externalBtn) {
+            if (hasArticleId) {
+                externalBtn.dataset.articleId = String(articleId);
+                externalBtn.disabled = false;
+                externalBtn.setAttribute('aria-label', `Open ${article.title || 'article'} externally`);
+            } else {
+                externalBtn.disabled = true;
+                externalBtn.removeAttribute('data-article-id');
+                externalBtn.setAttribute('aria-label', 'Open externally');
+            }
         }
 
         if (addBtn) {
-            const articleId = Number(article.id);
-
-            if (Number.isInteger(articleId) && articleId > 0) {
+            if (hasArticleId) {
                 addBtn.dataset.articleId = String(articleId);
                 addBtn.disabled = false;
             } else {
@@ -1810,7 +2188,9 @@ function renderArticles(articles, { requestKey = '' } = {}) {
         fragment.appendChild(node);
     });
 
+    articlesRuntime.articleById = articleById;
     dom.elements.articlesList.appendChild(fragment);
+    renderArticleViewer();
     return true;
 }
 
@@ -1821,11 +2201,14 @@ function renderDigestClusters(payload) {
 
     const activeRange = normalizeDigestRange(payload?.variant || digestRange);
     const clusters = sortDigestClusters(Array.isArray(payload?.clusters) ? payload.clusters : []);
+    const digestArticleById = new Map();
     dom.digest.list.innerHTML = '';
+    digestRuntime.articleById = digestArticleById;
 
     if (clusters.length === 0) {
         writeContent(dom.digest.state, getDigestEmptyStateMessage(activeRange));
         show(dom.digest.state);
+        renderArticleViewer();
         return;
     }
 
@@ -1914,17 +2297,28 @@ function renderDigestClusters(payload) {
             itemsGridEl.classList.toggle('is-single-item', items.length === 1);
             items.forEach(item => {
                 const card = document.createElement('article');
-                const hasUrl = Boolean(item.url);
+                const normalizedItemUrl = normalizeArticleUrl(item.url);
+                const hasUrl = Boolean(normalizedItemUrl);
+                const itemArticleId = Number(item.id);
+                const hasItemArticleId = Number.isInteger(itemArticleId) && itemArticleId > 0;
                 card.className = hasUrl ? 'digest-item-card digest-item-card-link' : 'digest-item-card';
+                card.dataset.itemTitle = String(item.title || 'Untitled');
 
                 if (hasUrl) {
                     card.setAttribute('role', 'link');
                     card.tabIndex = 0;
-                    card.dataset.itemUrl = item.url;
+                    card.dataset.itemUrl = normalizedItemUrl;
                 } else {
                     card.removeAttribute('role');
                     card.removeAttribute('tabindex');
                     card.removeAttribute('data-item-url');
+                }
+
+                if (hasItemArticleId) {
+                    digestArticleById.set(itemArticleId, item);
+                    card.dataset.articleId = String(itemArticleId);
+                } else {
+                    card.removeAttribute('data-article-id');
                 }
 
                 const meta = document.createElement('div');
@@ -2004,7 +2398,7 @@ function renderDigestClusters(payload) {
 
                 const clusterAddBtn = document.createElement('button');
                 clusterAddBtn.type = 'button';
-                clusterAddBtn.className = 'btn ghost btn-add digest-cluster-add-btn';
+                clusterAddBtn.className = 'btn ghost btn-add article-action-btn digest-cluster-add-btn';
                 clusterAddBtn.textContent = '+';
                 clusterAddBtn.disabled = clusterArticleIds.length === 0;
                 if (clusterAddBtn.disabled) {
@@ -2038,6 +2432,7 @@ function renderDigestClusters(payload) {
     });
 
     dom.digest.list.appendChild(fragment);
+    renderArticleViewer();
 }
 
 function renderDigestSubtitle(payload) {
@@ -2442,6 +2837,8 @@ function setupSse() {
 async function boot() {
     applyThemeState();
     applyLayoutState();
+    applyViewerWidthState();
+    renderArticleViewer();
     updateStickySubnavScrollState();
     await loadFeeds();
     await loadDigestSettings();
@@ -2616,7 +3013,74 @@ dom.elements.filterList.addEventListener('change', () => loadArticles());
 if (dom.elements.filterTopic) {
     dom.elements.filterTopic.addEventListener('change', () => loadArticles());
 }
+const viewerHideButtons = [dom.elements.articleViewerHideBtn, dom.digest.viewerHideBtn];
+const viewerWidthOptions = getViewerWidthOptions();
+
+viewerHideButtons.forEach(button => {
+    if (!button) {
+        return;
+    }
+
+    button.addEventListener('click', () => {
+        hideArticleViewer();
+    });
+});
+
+if (viewerWidthOptions.length > 0) {
+    updateViewerWidthAvailability();
+    updateViewerWidthUi();
+    viewerWidthOptions.forEach(option => {
+        option.addEventListener('click', () => {
+            if (option.disabled) {
+                return;
+            }
+
+            const nextWidth = normalizeViewerWidth(option.dataset.viewerWidth);
+
+            if (nextWidth === viewerWidth) {
+                return;
+            }
+
+            viewerWidth = nextWidth;
+            localStorage.setItem(localStorageKeys.viewerWidthKey, viewerWidth);
+            applyViewerWidthState();
+            renderArticleViewer();
+        });
+    });
+} else {
+    localStorage.setItem(localStorageKeys.viewerWidthKey, viewerWidth);
+}
 dom.elements.articlesList.addEventListener('click', async event => {
+    const readButton = event.target.closest('.btn-read[data-article-id]');
+    if (readButton && dom.elements.articlesList.contains(readButton)) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const articleId = Number(readButton.dataset.articleId);
+
+        if (!Number.isInteger(articleId) || articleId <= 0) {
+            return;
+        }
+
+        openArticleInViewer(articleId);
+        return;
+    }
+
+    const externalButton = event.target.closest('.btn-open-external[data-article-id]');
+    if (externalButton && dom.elements.articlesList.contains(externalButton)) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const articleId = Number(externalButton.dataset.articleId);
+
+        if (!Number.isInteger(articleId) || articleId <= 0) {
+            return;
+        }
+
+        openArticleExternal(articleId);
+        return;
+    }
+
     const addButton = event.target.closest('.btn-add[data-article-id]');
     if (addButton && dom.elements.articlesList.contains(addButton)) {
         event.preventDefault();
@@ -2738,11 +3202,12 @@ dom.digest.list.addEventListener('click', async event => {
         }
 
         const url = String(itemCard.dataset.itemUrl || '');
+
         if (!url) {
             return;
         }
 
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openDigestItemCardInViewer(itemCard);
     }
 });
 dom.digest.list.addEventListener('keydown', event => {
@@ -2762,7 +3227,7 @@ dom.digest.list.addEventListener('keydown', event => {
         return;
     }
 
-    window.open(url, '_blank', 'noopener,noreferrer');
+    openDigestItemCardInViewer(itemCard);
 });
 dom.elements.toggleLayoutBtn.addEventListener('click', () => {
     isListLayout = !isListLayout;
@@ -2912,6 +3377,14 @@ window.addEventListener('keydown', event => {
     if (isListModalOpen()) {
         event.preventDefault();
         closeListModal();
+        return;
+    }
+    if (!isViewActive('main') && !isViewActive('digest')) {
+        return;
+    }
+    if (viewerOpen) {
+        event.preventDefault();
+        hideArticleViewer();
         return;
     }
     if (!isViewActive('main')) {

@@ -1,3 +1,9 @@
+## 0.4.0
+
+Features:
+
+- in-app viewer (browser) for the articles
+
 ## 0.3.0
 
 Features:
