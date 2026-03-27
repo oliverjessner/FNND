@@ -172,7 +172,7 @@ let topicEditingSlug = null;
 let sse = null;
 let digestSortDirection = localStorage.getItem(localStorageKeys.digestSortKey) === 'asc' ? 'asc' : 'desc';
 let digestRange = normalizeDigestRange(localStorage.getItem(localStorageKeys.digestRangeKey));
-let isDarkTheme = localStorage.getItem(localStorageKeys.themeKey) === 'dark';
+let isDarkTheme = localStorage.getItem(localStorageKeys.themeKey) !== 'light';
 let articlesNeedsRefresh = true;
 let pendingArticleIds = [];
 let clearDashboardPromise = null;

@@ -1,3 +1,7 @@
+## 0.5.0
+
+- ui overhaul, more hierarchy depth
+
 ## 0.4.0
 
 Features:

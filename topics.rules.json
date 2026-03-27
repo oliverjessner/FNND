@@ -1,152 +1,524 @@
 {
-    "android": {
-        "label": "📱 Android",
-        "strong": ["android", "google pixel", "play store", "android 15", "android 16"],
-        "medium": ["apk", "aosp", "material you", "samsung galaxy"],
-        "weak": ["launcher", "android update"]
-    },
-    "apple": {
-        "label": "🍎 Apple",
-        "strong": ["apple", "iphone", "ipad", "macbook", "macos", "ios", "vision pro"],
-        "medium": ["app store", "cupertino", "m-chip", "apple silicon", "imessage"],
-        "weak": ["safari", "airdrop", "facetime"]
-    },
-    "cloud": {
-        "label": "☁️ Cloud",
-        "strong": ["cloud", "aws", "amazon web services", "azure", "google cloud", "gcp", "kubernetes", "k8s"],
-        "medium": ["container", "docker", "orchestrierung", "container orchestration", "serverless", "cluster"],
-        "weak": ["deployment", "skalierung", "workload", "infrastruktur"]
-    },
-    "crypto": {
-        "label": "Krypto",
-        "strong": ["bitcoin", "ethereum", "crypto", "kryptowährung", "blockchain", "wallet", "defi"],
-        "medium": ["token", "smart contract", "nft", "staking", "layer 2"],
-        "weak": ["coin", "chain", "on-chain"]
-    },
-    "ecommerce": {
-        "label": "E-Commerce",
-        "strong": ["e-commerce", "onlineshop", "shopify", "woocommerce", "checkout", "warenkorb"],
-        "medium": ["conversion rate", "conversion", "aov", "retention", "merchant"],
-        "weak": ["shop", "bestellung", "produktseite"]
-    },
-    "emulation": {
-        "label": "Emulation",
-        "strong": ["emulator", "emulation", "rom", "retroarch", "dolphin emulator", "ppsspp", "melonds", "pcsx2"],
-        "medium": ["bios", "shader", "save state", "upscaling", "controller mapping"],
-        "weak": ["romset", "handheld", "retro gaming"]
-    },
-    "fintech": {
-        "label": "💸 Fintech",
-        "strong": ["fintech", "payment", "zahlungsdienst", "stripe", "paypal", "banking api", "open banking"],
-        "medium": ["iban", "sepa", "psd2", "kyc", "aml", "merchant account"],
-        "weak": ["zahlung", "transaktion", "konto"]
-    },
-    "gaming": {
-        "label": "🎮 Gaming",
-        "strong": ["gaming", "videospiel", "game", "steam", "playstation", "xbox", "nintendo"],
-        "medium": ["indie game", "fps", "rpg", "launch trailer", "game pass"],
-        "weak": ["spieler", "konsole", "titel"]
-    },
-    "google": {
-        "label": "Google",
-        "strong": ["google", "alphabet", "gemini", "android", "chrome", "google search"],
-        "medium": ["workspace", "youtube", "pixel", "deepmind", "google cloud"],
-        "weak": ["maps", "gmail"]
-    },
-    "hardware": {
-        "label": "Hardware",
-        "strong": ["hardware", "gpu", "cpu", "prozessor", "mainboard", "ssd", "ram"],
-        "medium": ["benchmark", "chip", "thermals", "leistungstest", "akku"],
-        "weak": ["leistung", "takt", "verbrauch"]
-    },
-    "ki": {
-        "label": "🤖 KI",
-        "strong": [
-            "künstliche intelligenz",
-            "artificial intelligence",
-            "chatgpt",
-            "openai",
-            "claude",
-            "llm",
-            "generative ai"
-        ],
-        "medium": ["copilot", "prompting", "gemini", "anthropic", "embedding"],
-        "weak": ["modell", "inferenz", "fine tuning"]
-    },
-    "meta": {
-        "label": "💊 Meta",
-        "strong": ["meta", "facebook", "instagram", "whatsapp", "threads"],
-        "medium": ["reels", "metaverse", "oculus", "quest"],
-        "weak": ["social graph", "feed ranking"]
-    },
-    "microsoft": {
-        "label": "🪟 Microsoft",
-        "strong": ["microsoft", "windows", "azure", "github", "copilot", "xbox"],
-        "medium": ["office 365", "teams", "onedrive", "windows 11"],
-        "weak": ["redmond", "active directory"]
-    },
-    "mobile": {
-        "label": "Mobile",
-        "strong": ["smartphone", "mobile app", "ios", "android", "app store", "play store"],
-        "medium": ["tablet", "mobile os", "apk", "swiftui", "jetpack compose", "flutter"],
-        "weak": ["app", "touch", "update"]
-    },
-    "opensource": {
-        "label": "🆓 Open Source",
-        "strong": [
-            "open source",
-            "opensource",
-            "foss",
-            "osi",
-            "osi approved",
-            "gpl",
-            "mit license",
-            "apache 2.0",
-            "mozilla public license"
-        ],
-        "medium": ["pull request", "maintainer", "fork", "upstream", "community project", "copyleft"],
-        "weak": ["lizenz", "source code", "repository"]
-    },
-    "privacy": {
-        "label": "🕵 Datenschutz",
-        "strong": ["datenschutz", "dsgvo", "gdpr", "privacy", "personenbezogene daten", "einwilligung"],
-        "medium": ["tracking", "consent", "cookie banner", "data processing", "auftragsverarbeitung"],
-        "weak": ["daten", "nutzerdaten", "compliance"]
-    },
-    "regulierung": {
-        "label": "🇪🇺 Regulierung",
-        "strong": ["eu ai act", "dsa", "dma", "dora", "nIS2", "gdpr", "dsgvo"],
-        "medium": ["regulierung", "compliance", "aufsicht", "verordnung", "gesetzesentwurf"],
-        "weak": ["rechtlich", "pflicht", "meldepflicht"]
-    },
-    "saas": {
-        "label": "💻 SaaS",
-        "strong": ["saas", "software as a service", "subscription software", "b2b software"],
-        "medium": ["mrr", "arr", "churn", "trial", "freemium", "self-serve"],
-        "weak": ["abo", "kundenbindung", "onboarding"]
-    },
-    "security": {
-        "label": "🚨 Security",
-        "strong": ["cybersecurity", "it-sicherheit", "security", "zero day", "ransomware", "vulnerability", "cve"],
-        "medium": ["exploit", "patch", "authentifizierung", "2fa", "mfa", "phishing", "malware"],
-        "weak": ["angriff", "sicherheitslücke", "absicherung"]
-    },
-    "social_media": {
-        "label": "🪢 Social Media",
-        "strong": ["social media", "tiktok", "instagram", "youtube", "facebook", "x.com", "twitter", "linkedin"],
-        "medium": ["creator economy", "algorithmus", "feed", "reels", "shorts"],
-        "weak": ["follower", "reichweite", "viral"]
-    },
-    "startup": {
-        "label": "🚀 Startup",
-        "strong": ["startup", "venture capital", "seed-runde", "series a", "cap table", "Wagniskapital"],
-        "medium": ["founder", "gründung", "runway", "pitch deck", "business angel"],
-        "weak": ["investment", "finanzierung"]
-    },
-    "vc": {
-        "label": "💰 VC",
-        "strong": ["venture capital", "vc", "private equity", "seed", "pre-seed", "series a", "series b", "term sheet"],
-        "medium": ["valuation", "cap table", "runway", "burn rate", "fundraising", "lead investor"],
-        "weak": ["finanzierung", "investment", "investor"]
-    }
+  "android": {
+    "label": "📱 Android",
+    "strong": [
+      "android",
+      "google pixel",
+      "play store",
+      "android 15",
+      "android 16"
+    ],
+    "medium": [
+      "apk",
+      "aosp",
+      "material you",
+      "samsung galaxy"
+    ],
+    "weak": [
+      "launcher",
+      "android update"
+    ]
+  },
+  "apple": {
+    "label": "🍎 Apple",
+    "strong": [
+      "apple",
+      "iphone",
+      "ipad",
+      "macbook",
+      "macos",
+      "ios",
+      "vision pro"
+    ],
+    "medium": [
+      "app store",
+      "cupertino",
+      "m-chip",
+      "apple silicon",
+      "imessage"
+    ],
+    "weak": [
+      "safari",
+      "airdrop",
+      "facetime"
+    ]
+  },
+  "cloud": {
+    "label": "☁️ Cloud",
+    "strong": [
+      "cloud",
+      "aws",
+      "amazon web services",
+      "azure",
+      "google cloud",
+      "gcp",
+      "kubernetes",
+      "k8s"
+    ],
+    "medium": [
+      "container",
+      "docker",
+      "orchestrierung",
+      "container orchestration",
+      "serverless",
+      "cluster"
+    ],
+    "weak": [
+      "deployment",
+      "skalierung",
+      "workload",
+      "infrastruktur"
+    ]
+  },
+  "crypto": {
+    "label": "Krypto",
+    "strong": [
+      "bitcoin",
+      "ethereum",
+      "crypto",
+      "kryptowährung",
+      "blockchain",
+      "wallet",
+      "defi"
+    ],
+    "medium": [
+      "token",
+      "smart contract",
+      "nft",
+      "staking",
+      "layer 2"
+    ],
+    "weak": [
+      "coin",
+      "chain",
+      "on-chain"
+    ]
+  },
+  "ecommerce": {
+    "label": "E-Commerce",
+    "strong": [
+      "e-commerce",
+      "onlineshop",
+      "shopify",
+      "woocommerce",
+      "checkout",
+      "warenkorb"
+    ],
+    "medium": [
+      "conversion rate",
+      "conversion",
+      "aov",
+      "retention",
+      "merchant"
+    ],
+    "weak": [
+      "shop",
+      "bestellung",
+      "produktseite"
+    ]
+  },
+  "emulation": {
+    "label": "Emulation",
+    "strong": [
+      "emulator",
+      "emulation",
+      "rom",
+      "retroarch",
+      "dolphin emulator",
+      "ppsspp",
+      "melonds",
+      "pcsx2"
+    ],
+    "medium": [
+      "bios",
+      "shader",
+      "save state",
+      "upscaling",
+      "controller mapping"
+    ],
+    "weak": [
+      "romset",
+      "handheld",
+      "retro gaming"
+    ]
+  },
+  "fintech": {
+    "label": "💸 Fintech",
+    "strong": [
+      "fintech",
+      "payment",
+      "zahlungsdienst",
+      "stripe",
+      "paypal",
+      "banking api",
+      "open banking"
+    ],
+    "medium": [
+      "iban",
+      "sepa",
+      "psd2",
+      "kyc",
+      "aml",
+      "merchant account"
+    ],
+    "weak": [
+      "zahlung",
+      "transaktion",
+      "konto"
+    ]
+  },
+  "gaming": {
+    "label": "🎮 Gaming",
+    "strong": [
+      "gaming",
+      "videospiel",
+      "game",
+      "steam",
+      "playstation",
+      "xbox",
+      "nintendo"
+    ],
+    "medium": [
+      "indie game",
+      "fps",
+      "rpg",
+      "launch trailer",
+      "game pass"
+    ],
+    "weak": [
+      "spieler",
+      "konsole",
+      "titel"
+    ]
+  },
+  "google": {
+    "label": "Google",
+    "strong": [
+      "google",
+      "alphabet",
+      "gemini",
+      "android",
+      "chrome",
+      "google search"
+    ],
+    "medium": [
+      "workspace",
+      "youtube",
+      "pixel",
+      "deepmind",
+      "google cloud"
+    ],
+    "weak": [
+      "maps",
+      "gmail"
+    ]
+  },
+  "hardware": {
+    "label": "Hardware",
+    "strong": [
+      "hardware",
+      "gpu",
+      "cpu",
+      "prozessor",
+      "mainboard",
+      "ssd",
+      "ram"
+    ],
+    "medium": [
+      "benchmark",
+      "chip",
+      "thermals",
+      "leistungstest",
+      "akku"
+    ],
+    "weak": [
+      "leistung",
+      "takt",
+      "verbrauch"
+    ]
+  },
+  "ki": {
+    "label": "🤖 KI",
+    "strong": [
+      "künstliche intelligenz",
+      "artificial intelligence",
+      "chatgpt",
+      "openai",
+      "claude",
+      "llm",
+      "generative ai"
+    ],
+    "medium": [
+      "copilot",
+      "prompting",
+      "gemini",
+      "anthropic",
+      "embedding"
+    ],
+    "weak": [
+      "modell",
+      "inferenz",
+      "fine tuning"
+    ]
+  },
+  "meta": {
+    "label": "💊 Meta",
+    "strong": [
+      "meta",
+      "facebook",
+      "instagram",
+      "whatsapp",
+      "threads"
+    ],
+    "medium": [
+      "reels",
+      "metaverse",
+      "oculus",
+      "quest"
+    ],
+    "weak": [
+      "social graph",
+      "feed ranking"
+    ]
+  },
+  "microsoft": {
+    "label": "🪟 Microsoft",
+    "strong": [
+      "microsoft",
+      "windows",
+      "azure",
+      "github",
+      "copilot",
+      "xbox"
+    ],
+    "medium": [
+      "office 365",
+      "teams",
+      "onedrive",
+      "windows 11"
+    ],
+    "weak": [
+      "redmond",
+      "active directory"
+    ]
+  },
+  "mobile": {
+    "label": "Mobile",
+    "strong": [
+      "smartphone",
+      "mobile app",
+      "ios",
+      "android",
+      "app store",
+      "play store"
+    ],
+    "medium": [
+      "tablet",
+      "mobile os",
+      "apk",
+      "swiftui",
+      "jetpack compose",
+      "flutter"
+    ],
+    "weak": [
+      "app",
+      "touch",
+      "update"
+    ]
+  },
+  "opensource": {
+    "label": "🆓 Open Source",
+    "strong": [
+      "open source",
+      "opensource",
+      "foss",
+      "osi",
+      "osi approved",
+      "gpl",
+      "mit license",
+      "apache 2.0",
+      "mozilla public license"
+    ],
+    "medium": [
+      "pull request",
+      "maintainer",
+      "fork",
+      "upstream",
+      "community project",
+      "copyleft"
+    ],
+    "weak": [
+      "lizenz",
+      "source code",
+      "repository"
+    ]
+  },
+  "privacy": {
+    "label": "🕵 Datenschutz",
+    "strong": [
+      "datenschutz",
+      "dsgvo",
+      "gdpr",
+      "privacy",
+      "personenbezogene daten",
+      "einwilligung"
+    ],
+    "medium": [
+      "tracking",
+      "consent",
+      "cookie banner",
+      "data processing",
+      "auftragsverarbeitung"
+    ],
+    "weak": [
+      "daten",
+      "nutzerdaten",
+      "compliance"
+    ]
+  },
+  "regulierung": {
+    "label": "🇪🇺 Regulierung",
+    "strong": [
+      "eu ai act",
+      "dsa",
+      "dma",
+      "dora",
+      "nIS2",
+      "gdpr",
+      "dsgvo"
+    ],
+    "medium": [
+      "regulierung",
+      "compliance",
+      "aufsicht",
+      "verordnung",
+      "gesetzesentwurf"
+    ],
+    "weak": [
+      "rechtlich",
+      "pflicht",
+      "meldepflicht"
+    ]
+  },
+  "saas": {
+    "label": "💻 SaaS",
+    "strong": [
+      "saas",
+      "software as a service",
+      "subscription software",
+      "b2b software"
+    ],
+    "medium": [
+      "mrr",
+      "arr",
+      "churn",
+      "trial",
+      "freemium",
+      "self-serve"
+    ],
+    "weak": [
+      "abo",
+      "kundenbindung",
+      "onboarding"
+    ]
+  },
+  "security": {
+    "label": "🚨 Security",
+    "strong": [
+      "cybersecurity",
+      "it-sicherheit",
+      "security",
+      "zero day",
+      "ransomware",
+      "vulnerability",
+      "cve"
+    ],
+    "medium": [
+      "exploit",
+      "patch",
+      "authentifizierung",
+      "2fa",
+      "mfa",
+      "phishing",
+      "malware"
+    ],
+    "weak": [
+      "angriff",
+      "sicherheitslücke",
+      "absicherung"
+    ]
+  },
+  "social_media": {
+    "label": "🪢 Social Media",
+    "strong": [
+      "social media",
+      "tiktok",
+      "instagram",
+      "youtube",
+      "facebook",
+      "x.com",
+      "twitter",
+      "linkedin"
+    ],
+    "medium": [
+      "creator economy",
+      "algorithmus",
+      "feed",
+      "reels",
+      "shorts"
+    ],
+    "weak": [
+      "follower",
+      "reichweite",
+      "viral"
+    ]
+  },
+  "startup": {
+    "label": "🚀 Startup",
+    "strong": [
+      "startup",
+      "venture capital",
+      "seed-runde",
+      "series a",
+      "cap table",
+      "Wagniskapital"
+    ],
+    "medium": [
+      "founder",
+      "gründung",
+      "runway",
+      "pitch deck",
+      "business angel"
+    ],
+    "weak": [
+      "investment",
+      "finanzierung"
+    ]
+  },
+  "vc": {
+    "label": "💰 VC",
+    "strong": [
+      "venture capital",
+      "vc",
+      "private equity",
+      "seed",
+      "pre-seed",
+      "series a",
+      "series b",
+      "term sheet"
+    ],
+    "medium": [
+      "valuation",
+      "cap table",
+      "runway",
+      "burn rate",
+      "fundraising",
+      "lead investor"
+    ],
+    "weak": [
+      "finanzierung",
+      "investment",
+      "investor"
+    ]
+  }
 }
