@@ -14,19 +14,17 @@ GIT_REMOTE="${GIT_REMOTE:-origin}"
 BUILD_COMMAND="${BUILD_COMMAND:-npm run dist:all:workaround}"
 
 DRY_RUN=0
-PUSH_TAG=0
 
 usage() {
     cat <<'EOF'
-Usage: ./publish.sh [--dry-run] [--push]
+Usage: ./publish.sh [--dry-run]
 
 Stages all changes, creates a release commit, pushes the current branch, runs the
-release build, then creates an annotated git tag from package.json.version and
-the first section in changelog.md.
+release build, creates and pushes an annotated git tag from package.json.version
+and the first section in changelog.md, then creates a GitHub release.
 
 Options:
   --dry-run   Print the resolved commit, build, tag and release notes without writing anything
-  --push      Push the created tag to the configured remote (default: origin)
   -h, --help  Show this help
 
 Environment:
@@ -48,9 +46,6 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=1
             ;;
-        --push)
-            PUSH_TAG=1
-            ;;
         -h|--help)
             usage
             exit 0
@@ -67,6 +62,8 @@ done
 
 git rev-parse --git-dir >/dev/null 2>&1 || fail "this is not a git repository"
 git remote get-url "$GIT_REMOTE" >/dev/null 2>&1 || fail "git remote '$GIT_REMOTE' does not exist"
+command -v gh >/dev/null 2>&1 || fail "gh CLI is required"
+gh auth status -h github.com >/dev/null 2>&1 || fail "gh is not authenticated for github.com"
 
 CURRENT_BRANCH=$(git symbolic-ref --quiet --short HEAD) || fail "publish requires a checked out branch"
 
@@ -128,6 +125,7 @@ TAG_NAME="${TAG_PREFIX}${VERSION}"
 COMMIT_MESSAGE="publish ${TAG_NAME}"
 
 git rev-parse --verify "refs/tags/$TAG_NAME" >/dev/null 2>&1 && fail "tag '$TAG_NAME' already exists"
+gh release view "$TAG_NAME" >/dev/null 2>&1 && fail "GitHub release '$TAG_NAME' already exists"
 
 TAG_MESSAGE_FILE=$(mktemp)
 cleanup() {
@@ -169,7 +167,9 @@ git diff --quiet || fail "build modified tracked files; commit those changes bef
 git tag -a "$TAG_NAME" -F "$TAG_MESSAGE_FILE"
 printf 'Created tag %s\n' "$TAG_NAME"
 
-if [[ "$PUSH_TAG" -eq 1 ]]; then
-    git push "$GIT_REMOTE" "$TAG_NAME"
-    printf 'Pushed %s to %s\n' "$TAG_NAME" "$GIT_REMOTE"
-fi
+git push "$GIT_REMOTE" "$TAG_NAME"
+printf 'Pushed %s to %s\n' "$TAG_NAME" "$GIT_REMOTE"
+
+printf 'Creating GitHub release %s\n' "$TAG_NAME"
+gh release create "$TAG_NAME" --verify-tag --title "$TAG_NAME" --notes-file "$TAG_MESSAGE_FILE"
+printf 'Created GitHub release %s\n' "$TAG_NAME"
