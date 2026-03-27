@@ -12,6 +12,7 @@ CHANGELOG_FILE="${CHANGELOG_FILE:-changelog.md}"
 TAG_PREFIX="${TAG_PREFIX:-v}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 BUILD_COMMAND="${BUILD_COMMAND:-npm run dist:all:workaround}"
+RELEASE_OUTPUT_DIR="${RELEASE_OUTPUT_DIR:-}"
 
 DRY_RUN=0
 
@@ -33,12 +34,20 @@ Environment:
   TAG_PREFIX         Tag prefix, defaults to "v"
   GIT_REMOTE         Git remote used with --push, defaults to "origin"
   BUILD_COMMAND      Release build command, defaults to "npm run dist:all:workaround"
+  RELEASE_OUTPUT_DIR Override release artifact directory, defaults to package.json build.directories.output
 EOF
 }
 
 fail() {
     printf 'Error: %s\n' "$1" >&2
     exit 1
+}
+
+join_lines() {
+    local item
+    for item in "$@"; do
+        printf '  - %s\n' "$item"
+    done
 }
 
 while [[ $# -gt 0 ]]; do
@@ -71,6 +80,13 @@ VERSION=$(
     node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (!pkg.version) process.exit(1); process.stdout.write(pkg.version);" \
         "$PACKAGE_JSON_FILE"
 ) || fail "could not read version from $PACKAGE_JSON_FILE"
+
+if [[ -z "$RELEASE_OUTPUT_DIR" ]]; then
+    RELEASE_OUTPUT_DIR=$(
+        node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write((pkg.build && pkg.build.directories && pkg.build.directories.output) || 'dist');" \
+            "$PACKAGE_JSON_FILE"
+    ) || fail "could not read build output directory from $PACKAGE_JSON_FILE"
+fi
 
 CHANGELOG_TITLE=$(
     awk '
@@ -140,10 +156,51 @@ trap cleanup EXIT
     fi
 } >"$TAG_MESSAGE_FILE"
 
+collect_release_artifacts() {
+    local output_dir="$1"
+    local version="$2"
+    local required="${3:-1}"
+    local files=()
+    local file
+
+    if [[ ! -d "$output_dir" ]]; then
+        if [[ "$required" -eq 1 ]]; then
+            fail "release output directory '$output_dir' does not exist"
+        fi
+        return 0
+    fi
+
+    while IFS= read -r file; do
+        files+=("$file")
+    done < <(
+        find "$output_dir" -maxdepth 1 -type f \
+            \( -name "*${version}*.dmg" -o -name "*${version}*.exe" -o -name "*${version}*.AppImage" \) \
+            | LC_ALL=C sort
+    )
+
+    if [[ "${#files[@]}" -eq 0 ]]; then
+        if [[ "$required" -eq 1 ]]; then
+            fail "no release artifacts found in '$output_dir' for version $version"
+        fi
+        return 0
+    fi
+
+    printf '%s\n' "${files[@]}"
+}
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
+    mapfile -t RELEASE_ARTIFACTS < <(collect_release_artifacts "$RELEASE_OUTPUT_DIR" "$VERSION" 0)
     printf 'Branch: %s\n' "$CURRENT_BRANCH"
     printf 'Commit message: %s\n\n' "$COMMIT_MESSAGE"
     printf 'Build command: %s\n\n' "$BUILD_COMMAND"
+    printf 'Release output dir: %s\n' "$RELEASE_OUTPUT_DIR"
+    printf 'Release artifacts:\n'
+    if [[ "${#RELEASE_ARTIFACTS[@]}" -gt 0 ]]; then
+        join_lines "${RELEASE_ARTIFACTS[@]}"
+    else
+        printf '  - resolved after build\n'
+    fi
+    printf '\n'
     printf 'Tag: %s\n\n' "$TAG_NAME"
     printf 'Release notes:\n'
     cat "$TAG_MESSAGE_FILE"
@@ -163,6 +220,7 @@ git push "$GIT_REMOTE" "$CURRENT_BRANCH"
 printf 'Running build: %s\n' "$BUILD_COMMAND"
 sh -lc "$BUILD_COMMAND"
 git diff --quiet || fail "build modified tracked files; commit those changes before tagging"
+mapfile -t RELEASE_ARTIFACTS < <(collect_release_artifacts "$RELEASE_OUTPUT_DIR" "$VERSION")
 
 git tag -a "$TAG_NAME" -F "$TAG_MESSAGE_FILE"
 printf 'Created tag %s\n' "$TAG_NAME"
@@ -173,3 +231,8 @@ printf 'Pushed %s to %s\n' "$TAG_NAME" "$GIT_REMOTE"
 printf 'Creating GitHub release %s\n' "$TAG_NAME"
 gh release create "$TAG_NAME" --verify-tag --title "$TAG_NAME" --notes-file "$TAG_MESSAGE_FILE"
 printf 'Created GitHub release %s\n' "$TAG_NAME"
+
+printf 'Uploading release artifacts\n'
+join_lines "${RELEASE_ARTIFACTS[@]}"
+gh release upload "$TAG_NAME" "${RELEASE_ARTIFACTS[@]}"
+printf 'Uploaded release artifacts for %s\n' "$TAG_NAME"
