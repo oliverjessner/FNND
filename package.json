@@ -1,6 +1,6 @@
 {
     "name": "no-bullshit-rss",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "type": "module",
     "description": "RSS-based news aggregator",
     "main": "electron/main.cjs",
@@ -16,7 +16,8 @@
         "dist:linux": "electron-builder --linux AppImage --x64",
         "dist:all": "electron-rebuild -f -w @vscode/sqlite3 && electron-builder --mac --win --linux",
         "dist:all:workaround": "PYTHON=/opt/homebrew/opt/python@3.11/bin/python3.11 CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:all",
-        "build:all": "npm run dist:all:workaround"
+        "build:all": "npm run dist:all:workaround",
+        "publish": "sh publish.sh"
     },
     "dependencies": {
         "@biu/simhash": "^0.1.1",
