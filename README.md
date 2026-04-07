@@ -1,4 +1,4 @@
-# NO BULLSHIT RSS
+# NO BULLSHIT RSS 💩
 
 I vibe coded some electron slop.
 
