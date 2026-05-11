@@ -1,5 +1,5 @@
 import sqlite3 from '@vscode/sqlite3';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,16 +36,38 @@ export function all(sql, params = []) {
     });
 }
 
-export async function initSchema() {
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    const schemaSql = await readFile(schemaPath, 'utf-8');
-
+function execSql(sql) {
     return new Promise((resolve, reject) => {
-        db.exec(schemaSql, err => {
+        db.exec(sql, err => {
             if (err) return reject(err);
             resolve();
         });
     });
+}
+
+export async function initSchema() {
+    const migrationsDir = path.join(__dirname, '..', '..', 'migrations');
+    const migrationFiles = (await readdir(migrationsDir))
+        .filter(file => /^\d+_.+\.sql$/u.test(file))
+        .sort((left, right) => left.localeCompare(right));
+
+    await run(
+        `CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            appliedAt TEXT NOT NULL DEFAULT (datetime('now'))
+        )`,
+    );
+
+    for (const file of migrationFiles) {
+        const applied = await get('SELECT version FROM schema_migrations WHERE version = ?', [file]);
+        if (applied) {
+            continue;
+        }
+
+        const migrationSql = await readFile(path.join(migrationsDir, file), 'utf-8');
+        await execSql(migrationSql);
+        await run('INSERT INTO schema_migrations (version, appliedAt) VALUES (?, datetime(\'now\'))', [file]);
+    }
 }
 
 export default db;

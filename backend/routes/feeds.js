@@ -1,5 +1,6 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
+import { auth } from '../middleware/auth.js';
 import { isValidUrl } from '../utils/validation.js';
 import Parser from 'rss-parser';
 import { fetchSiteLogo } from '../services/logo.js';
@@ -23,7 +24,7 @@ async function isFeedReachable(url) {
     }
 }
 
-router.get('/', async (_, res) => {
+router.get('/', auth, async (_, res) => {
     const feeds = await all('SELECT * FROM feeds ORDER BY id DESC');
     const mapped = feeds.map(feed => {
         const logoDataUrl =
@@ -35,7 +36,8 @@ router.get('/', async (_, res) => {
     return res.json(mapped);
 });
 
-router.post('/', async ({ body: { name, websiteUrl, feedUrl } }, res) => {
+router.post('/', auth, async (req, res) => {
+    const { name, websiteUrl, feedUrl } = req.body || {};
     const reachable = await isFeedReachable(feedUrl);
     const logo = await fetchSiteLogo(websiteUrl);
     let logoBuffer = null;
@@ -61,7 +63,11 @@ router.post('/', async ({ body: { name, websiteUrl, feedUrl } }, res) => {
      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
         [name, websiteUrl, feedUrl, logoBuffer, logoMime],
     );
-    const feed = await get('SELECT * FROM feeds WHERE id = ?', [result.lastID]);
+    const feed = await get('SELECT * FROM feeds WHERE id = ? AND ? = ?', [
+        result.lastID,
+        req.auth.ownerId,
+        'local-owner',
+    ]);
     const logoDataUrl =
         feed.logo && feed.logoMime ? `data:${feed.logoMime};base64,${feed.logo.toString('base64')}` : null;
     const { logo: logoBlob, logoMime: logoMimeType, ...rest } = feed;
@@ -70,11 +76,11 @@ router.post('/', async ({ body: { name, websiteUrl, feedUrl } }, res) => {
     return res.status(201).json({ ...rest, logoDataUrl });
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
     const { id } = req.params;
     const { name, websiteUrl, feedUrl } = req.body || {};
     const reachable = await isFeedReachable(feedUrl);
-    const existing = await get('SELECT * FROM feeds WHERE id = ?', [id]);
+    const existing = await get('SELECT * FROM feeds WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
 
     if (!name || !websiteUrl || !feedUrl) {
         return res.status(400).json({ error: 'name, websiteUrl, and feedUrl are required' });
@@ -103,15 +109,15 @@ router.put('/:id', async (req, res) => {
     const result = await run(
         `UPDATE feeds
      SET name = ?, websiteUrl = ?, feedUrl = ?, logo = ?, logoMime = ?, updatedAt = datetime('now')
-     WHERE id = ?`,
-        [name, websiteUrl, feedUrl, logoBuffer, logoMime, id],
+     WHERE id = ? AND ? = ?`,
+        [name, websiteUrl, feedUrl, logoBuffer, logoMime, id, req.auth.ownerId, 'local-owner'],
     );
 
     if (result.changes === 0) {
         return res.status(404).json({ error: 'Feed not found' });
     }
 
-    const feed = await get('SELECT * FROM feeds WHERE id = ?', [id]);
+    const feed = await get('SELECT * FROM feeds WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
     const logoDataUrl =
         feed.logo && feed.logoMime ? `data:${feed.logoMime};base64,${feed.logo.toString('base64')}` : null;
     const { logo: logoBlob, logoMime: logoMimeType, ...rest } = feed;
@@ -120,8 +126,9 @@ router.put('/:id', async (req, res) => {
     res.json({ ...rest, logoDataUrl });
 });
 
-router.delete('/:id', async ({ params: { id } }, res) => {
-    const result = await run('DELETE FROM feeds WHERE id = ?', [id]);
+router.delete('/:id', auth, async (req, res) => {
+    const { id } = req.params;
+    const result = await run('DELETE FROM feeds WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
 
     if (result.changes === 0) {
         return res.status(404).json({ error: 'Feed not found' });
@@ -131,7 +138,7 @@ router.delete('/:id', async ({ params: { id } }, res) => {
     return res.status(204).end();
 });
 
-router.get('/test/url', async ({ query: { url } }, res) => {
+router.get('/test/url', auth, async ({ query: { url } }, res) => {
     if (!isValidUrl(url)) {
         return res.status(400).json({ error: 'Invalid URL format' });
     }

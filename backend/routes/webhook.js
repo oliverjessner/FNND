@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { get, run } from '../database/datenbank.js';
+import { auth } from '../middleware/auth.js';
 import { publish } from '../services/events.js';
 import { classifyAndPersistArticleTopics } from '../services/topics.js';
 import { logWarn } from '../utils/logger.js';
@@ -102,7 +103,8 @@ function normalizeItems(body) {
     return [];
 }
 
-router.post('/articles', async ({ body }, res) => {
+router.post('/articles', auth, async (req, res) => {
+    const { body } = req;
     const items = normalizeItems(body);
     const defaultFeedId = body?.feedId !== undefined && body?.feedId !== null ? Number(body.feedId) : null;
 
@@ -127,7 +129,11 @@ router.post('/articles', async ({ body }, res) => {
         }
 
         if (!feedExistsCache.has(feedId)) {
-            const feedRow = await get('SELECT id FROM feeds WHERE id = ?', [feedId]);
+            const feedRow = await get('SELECT id FROM feeds WHERE id = ? AND ? = ?', [
+                feedId,
+                req.auth.ownerId,
+                'local-owner',
+            ]);
             feedExistsCache.set(feedId, Boolean(feedRow));
         }
 

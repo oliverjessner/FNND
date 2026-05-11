@@ -1,5 +1,6 @@
 import express from 'express';
 import { publish } from '../services/events.js';
+import { auth } from '../middleware/auth.js';
 import {
     classifyArticleTopics,
     deleteTopicBySlug,
@@ -42,7 +43,7 @@ function parseRulesBody(body = {}) {
     throw new Error('Provide `json` string or `rules` object');
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', auth, async (_req, res) => {
     const topics = await getTopicRowsWithMetadata();
     return res.json({
         topics,
@@ -51,11 +52,11 @@ router.get('/', async (_req, res) => {
     });
 });
 
-router.get('/rules', async (_req, res) => {
+router.get('/rules', auth, async (_req, res) => {
     return res.json(await getTopicRulesPayload());
 });
 
-router.post('/validate', async ({ body }, res) => {
+router.post('/validate', auth, async ({ body }, res) => {
     try {
         const parsedRules = parseRulesBody(body);
         const topics = validateAndNormalizeTopicDefinitions(parsedRules);
@@ -70,7 +71,7 @@ router.post('/validate', async ({ body }, res) => {
     }
 });
 
-router.put('/rules', async ({ body }, res) => {
+router.put('/rules', auth, async ({ body }, res) => {
     try {
         const parsedRules = parseRulesBody(body);
         const result = await saveTopicsFromJsonInput(parsedRules);
@@ -90,7 +91,7 @@ router.put('/rules', async ({ body }, res) => {
     }
 });
 
-router.post('/', async ({ body }, res) => {
+router.post('/', auth, async ({ body }, res) => {
     try {
         const topic = await upsertTopic(parseTopicPayload(body));
         publish('topics.updated', { source: 'create', slug: topic.slug });
@@ -100,7 +101,7 @@ router.post('/', async ({ body }, res) => {
     }
 });
 
-router.put('/:slug', async ({ params, body }, res) => {
+router.put('/:slug', auth, async ({ params, body }, res) => {
     const currentSlug = normalizeTopicSlug(params.slug);
     if (!currentSlug) {
         return res.status(400).json({ error: 'Invalid topic slug' });
@@ -127,7 +128,7 @@ router.put('/:slug', async ({ params, body }, res) => {
     }
 });
 
-router.delete('/:slug', async ({ params }, res) => {
+router.delete('/:slug', auth, async ({ params }, res) => {
     const slug = normalizeTopicSlug(params.slug);
     if (!slug) {
         return res.status(400).json({ error: 'Invalid topic slug' });
@@ -146,7 +147,7 @@ router.delete('/:slug', async ({ params }, res) => {
     return res.status(204).end();
 });
 
-router.post('/reprocess', async (_req, res) => {
+router.post('/reprocess', auth, async (_req, res) => {
     try {
         const result = await reprocessTopicClassificationForAllArticles();
 
@@ -163,7 +164,7 @@ router.post('/reprocess', async (_req, res) => {
     }
 });
 
-router.get('/article/:id', async ({ params }, res) => {
+router.get('/article/:id', auth, async ({ params }, res) => {
     const articleId = Number(params.id);
     if (!Number.isInteger(articleId) || articleId <= 0) {
         return res.status(400).json({ error: 'Invalid article id' });
@@ -173,7 +174,7 @@ router.get('/article/:id', async ({ params }, res) => {
     return res.json({ articleId, topics });
 });
 
-router.post('/classify-preview', async ({ body }, res) => {
+router.post('/classify-preview', auth, async ({ body }, res) => {
     const topicDefinitions = await getTopicDefinitions();
     const result = await classifyArticleTopics(
         {

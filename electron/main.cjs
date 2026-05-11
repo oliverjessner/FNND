@@ -105,8 +105,8 @@ function startServer() {
     serverProcess.on('exit', code => {
         if (code && code !== 0) {
             const message = serverLogPath
-                ? `Server exited with code ${code}. Log: ${serverLogPath}`
-                : `Server exited with code ${code}`;
+                ? ['Server exited with code ', code, '. Log: ', serverLogPath].join('')
+                : ['Server exited with code ', code].join('');
             dialog.showErrorBox('Server error', message);
         }
     });

@@ -1,5 +1,6 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
+import { auth } from '../middleware/auth.js';
 import { publish } from '../services/events.js';
 
 const router = express.Router();
@@ -19,13 +20,13 @@ function normalizeArticleIds(value) {
     return Array.from(ids);
 }
 
-router.get('/', async (_, res) => {
+router.get('/', auth, async (_, res) => {
     const lists = await all('SELECT * FROM lists ORDER BY id DESC');
     return res.json(lists);
 });
 
-router.post('/', async ({ body = {} }, res) => {
-    const { name, description, color = '#1d1d1f' } = body;
+router.post('/', auth, async (req, res) => {
+    const { name, description, color = '#1d1d1f' } = req.body || {};
     const desc = description ? description.trim() : null;
     const values = [name.trim(), desc, color];
     const sql = `INSERT INTO lists (name, description, color, createdAt, updatedAt) VALUES (?, ?, ?, datetime('now'), datetime('now'))`;
@@ -35,36 +36,41 @@ router.post('/', async ({ body = {} }, res) => {
     }
 
     const result = await run(sql, values);
-    const list = await get('SELECT * FROM lists WHERE id = ?', [result.lastID]);
+    const list = await get('SELECT * FROM lists WHERE id = ? AND ? = ?', [
+        result.lastID,
+        req.auth.ownerId,
+        'local-owner',
+    ]);
 
     publish('lists.updated', { id: list.id });
     return res.status(201).json(list);
 });
 
-router.put('/:id', async ({ params: { id }, body }, res) => {
-    const { name, description, color = '#1d1d1f' } = body || {};
+router.put('/:id', auth, async (req, res) => {
+    const { id } = req.params;
+    const { name, description, color = '#1d1d1f' } = req.body || {};
     const desc = description ? description.trim() : null;
     const values = [name.trim(), desc, color, id];
     const sql = `UPDATE lists
      SET name = ?, description = ?, color = ?, updatedAt = datetime('now')
-     WHERE id = ?`;
+     WHERE id = ? AND ? = ?`;
 
     if (!name) {
         return res.status(400).json({ error: 'name is required' });
     }
 
-    const result = await run(sql, values);
+    const result = await run(sql, [...values, req.auth.ownerId, 'local-owner']);
 
     if (result.changes === 0) {
         return res.status(404).json({ error: 'List not found' });
     }
 
-    const list = await get('SELECT * FROM lists WHERE id = ?', [id]);
+    const list = await get('SELECT * FROM lists WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
     publish('lists.updated', { id: list.id });
     res.json(list);
 });
 
-router.delete('/:id', async ({ params: { id } }, res) => {
+router.delete('/:id', auth, async ({ params: { id } }, res) => {
     const result = await run('DELETE FROM lists WHERE id = ?', [id]);
 
     if (result.changes === 0) {
@@ -75,7 +81,7 @@ router.delete('/:id', async ({ params: { id } }, res) => {
     return res.status(204).end();
 });
 
-router.post('/:id/items', async ({ params: { id }, body: { articleId } }, res) => {
+router.post('/:id/items', auth, async ({ params: { id }, body: { articleId } }, res) => {
     if (!articleId) {
         return res.status(400).json({ error: 'articleId is required' });
     }
@@ -90,7 +96,7 @@ router.post('/:id/items', async ({ params: { id }, body: { articleId } }, res) =
     return res.status(201).json({ ok: true });
 });
 
-router.post('/:id/items/bulk', async ({ params: { id }, body: { articleIds } }, res) => {
+router.post('/:id/items/bulk', auth, async ({ params: { id }, body: { articleIds } }, res) => {
     const normalizedArticleIds = normalizeArticleIds(articleIds);
 
     if (normalizedArticleIds.length === 0) {
@@ -133,7 +139,7 @@ router.post('/:id/items/bulk', async ({ params: { id }, body: { articleIds } }, 
     });
 });
 
-router.post('/:id/items/bulk-delete', async ({ params: { id }, body: { articleIds } }, res) => {
+router.post('/:id/items/bulk-delete', auth, async ({ params: { id }, body: { articleIds } }, res) => {
     const normalizedArticleIds = normalizeArticleIds(articleIds);
 
     if (normalizedArticleIds.length === 0) {
@@ -173,7 +179,7 @@ router.post('/:id/items/bulk-delete', async ({ params: { id }, body: { articleId
     });
 });
 
-router.delete('/:id/items/:articleId', async ({ params: { id, articleId } }, res) => {
+router.delete('/:id/items/:articleId', auth, async ({ params: { id, articleId } }, res) => {
     const result = await run('DELETE FROM list_items WHERE listId = ? AND articleId = ?', [id, articleId]);
 
     if (result.changes === 0) {

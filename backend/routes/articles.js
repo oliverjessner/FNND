@@ -1,5 +1,6 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
+import { auth } from '../middleware/auth.js';
 import {
     clusterDigestArticles,
     getDigestRangeIso,
@@ -48,7 +49,6 @@ async function loadTopicsByArticleIds(articleIds) {
 
     const articleIdChunks = chunkArray(normalizedArticleIds, 400);
     for (const chunk of articleIdChunks) {
-        const placeholders = chunk.map(() => '?').join(', ');
         const topicRows = await all(
             `
             SELECT
@@ -58,10 +58,10 @@ async function loadTopicsByArticleIds(articleIds) {
                 article_topics.score AS score
             FROM article_topics
             JOIN topics ON topics.slug = article_topics.topicSlug
-            WHERE article_topics.articleId IN (${placeholders})
+            WHERE article_topics.articleId IN (SELECT value FROM json_each(?))
             ORDER BY article_topics.score DESC, article_topics.topicSlug ASC
             `,
-            chunk,
+            [JSON.stringify(chunk)],
         );
 
         topicRows.forEach(row => {
@@ -97,7 +97,6 @@ async function buildArticleListsBulkPayload(articleIds) {
 
     const articleIdChunks = chunkArray(normalizedArticleIds, 400);
     for (const chunk of articleIdChunks) {
-        const placeholders = chunk.map(() => '?').join(', ');
         const rows = await all(
             `
             SELECT
@@ -107,10 +106,10 @@ async function buildArticleListsBulkPayload(articleIds) {
                 lists.color AS color
             FROM list_items
             JOIN lists ON lists.id = list_items.listId
-            WHERE list_items.articleId IN (${placeholders})
+            WHERE list_items.articleId IN (SELECT value FROM json_each(?))
             ORDER BY lists.name COLLATE NOCASE ASC, lists.id ASC
             `,
-            chunk,
+            [JSON.stringify(chunk)],
         );
 
         rows.forEach(row => {
@@ -184,8 +183,9 @@ async function markArticlesAsDigestedInTransaction(articleIds) {
     try {
         const chunks = chunkArray(ids, 400);
         for (const chunk of chunks) {
-            const placeholders = chunk.map(() => '?').join(', ');
-            const result = await run(`UPDATE articles SET dailyDigested = 1 WHERE id IN (${placeholders})`, chunk);
+            const result = await run('UPDATE articles SET dailyDigested = 1 WHERE id IN (SELECT value FROM json_each(?))', [
+                JSON.stringify(chunk),
+            ]);
             updated += Number(result?.changes || 0);
         }
         await run('COMMIT');
@@ -281,12 +281,16 @@ async function handleMarkArticleDigested(req, res) {
         return res.status(400).json({ error: 'Invalid article id' });
     }
 
-    const existing = await get('SELECT id, dailyDigested FROM articles WHERE id = ?', [articleId]);
+    const existing = await get('SELECT id, dailyDigested FROM articles WHERE id = ? AND ? = ?', [
+        articleId,
+        req.auth.ownerId,
+        'local-owner',
+    ]);
     if (!existing) {
         return res.status(404).json({ error: 'Article not found' });
     }
 
-    await run('UPDATE articles SET dailyDigested = 1 WHERE id = ?', [articleId]);
+    await run('UPDATE articles SET dailyDigested = 1 WHERE id = ? AND ? = ?', [articleId, req.auth.ownerId, 'local-owner']);
     publish('articles.updated', { source: 'digest', articleId, dailyDigested: true });
 
     return res.json({
@@ -311,22 +315,22 @@ async function handleMarkAllDigested(req, res) {
     return res.json({ ok: true, ...result });
 }
 
-router.get('/stats', async (_req, res) => {
+router.get('/stats', auth, async (_req, res) => {
     const row = await get('SELECT COUNT(*) AS total FROM articles');
     return res.json({ total: Number(row?.total || 0) });
 });
 
-router.get('/digest', handleDigestRequest);
-router.get('/daily-digest', async (_req, res) => {
+router.get('/digest', auth, handleDigestRequest);
+router.get('/daily-digest', auth, async (_req, res) => {
     const payload = await buildDigestPayload('day');
     return res.json(payload);
 });
-router.patch('/:id/digested', handleMarkArticleDigested);
-router.patch('/:id/daily-digested', handleMarkArticleDigested);
-router.post('/digest/mark-all-digested', handleMarkAllDigested);
-router.post('/daily-digest/mark-all-digested', handleMarkAllDigested);
+router.patch('/:id/digested', auth, handleMarkArticleDigested);
+router.patch('/:id/daily-digested', auth, handleMarkArticleDigested);
+router.post('/digest/mark-all-digested', auth, handleMarkAllDigested);
+router.post('/daily-digest/mark-all-digested', auth, handleMarkAllDigested);
 
-router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 100 } }, res) => {
+router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, limit = 100 } }, res) => {
     const params = [];
     const whereParts = [];
     const like = `%${query}%`;
@@ -352,16 +356,17 @@ router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 
         params.push(like, like, like);
     }
 
-    const where = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const sql = `
-    SELECT articles.*, feeds.name as sourceName, feeds.logo as sourceLogo, feeds.logoMime as sourceLogoMime
-    FROM articles
-    JOIN feeds ON feeds.id = articles.feedId
-    LEFT JOIN list_items ON list_items.articleId = articles.id
-    ${where}
-    ORDER BY articles.publishedAt DESC, articles.id DESC
-    LIMIT ?
-  `;
+    const sql = [
+        'SELECT articles.*, feeds.name as sourceName, feeds.logo as sourceLogo, feeds.logoMime as sourceLogoMime',
+        'FROM articles',
+        'JOIN feeds ON feeds.id = articles.feedId',
+        'LEFT JOIN list_items ON list_items.articleId = articles.id',
+        whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '',
+        'ORDER BY articles.publishedAt DESC, articles.id DESC',
+        'LIMIT ?',
+    ]
+        .filter(Boolean)
+        .join('\n');
     params.push(Number(limit) || 100);
 
     const rows = await all(sql, params);
@@ -379,14 +384,14 @@ router.get('/', async ({ query: { feedId, source, listId, topic, query, limit = 
     return res.json(withTopics);
 });
 
-router.post('/lists/bulk', async ({ body }, res) => {
+router.post('/lists/bulk', auth, async ({ body }, res) => {
     const articleIds = normalizeArticleIds(body?.articleIds);
     const payload = await buildArticleListsBulkPayload(articleIds);
 
     return res.json(payload);
 });
 
-router.get('/:id/lists', async ({ params: { id } }, res) => {
+router.get('/:id/lists', auth, async ({ params: { id } }, res) => {
     const rows = await all(
         `SELECT lists.id, lists.name, lists.color
      FROM list_items

@@ -1,4 +1,6 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import feedsRouter from './routes/feeds.js';
@@ -7,6 +9,7 @@ import listsRouter from './routes/lists.js';
 import digestSettingsRouter from './routes/digest-settings.js';
 import topicsRouter from './routes/topics.js';
 import webhookRouter from './routes/webhook.js';
+import { auth, requireLocalApiClient } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
 import { getLastFetchStatus, updateAllFeeds } from './services/fetcher.js';
 import { subscribe } from './services/events.js';
@@ -17,6 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
 const app = express();
 const PORT = process.env.PORT || 1377;
+const HOST = process.env.HOST || '127.0.0.1';
 
 let isManualFetchRunning = false;
 
@@ -82,10 +86,10 @@ function handleUnhandledError(err, _req, res, _next) {
 }
 
 async function start() {
-    const msg = `Server running at http://localhost:${PORT}`;
+    const msg = `Server running at http://${HOST}:${PORT}`;
     await initDatabase();
 
-    app.listen(PORT, () => {
+    app.listen(PORT, HOST, () => {
         console.log(msg);
         logLine(msg);
         return startScheduler();
@@ -99,8 +103,28 @@ function registerProcessHandlers() {
     );
 }
 
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+const writeLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: req => req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
+});
+
+app.use(
+    helmet({
+        contentSecurityPolicy: false,
+    }),
+);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(publicDir));
+app.use('/api', requireLocalApiClient, apiLimiter, writeLimiter);
 app.use('/api/feeds', feedsRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/lists', listsRouter);
@@ -108,11 +132,11 @@ app.use('/api/digest-settings', digestSettingsRouter);
 app.use('/api/topics', topicsRouter);
 app.use('/api/webhook', webhookRouter);
 
-app.get('/api/health', handleHealth);
-app.get('/api/fetch/status', handleFetchStatus);
-app.get('/api/events', handleEvents);
+app.get('/api/health', auth, handleHealth);
+app.get('/api/fetch/status', auth, handleFetchStatus);
+app.get('/api/events', auth, handleEvents);
 
-app.post('/api/fetch/run', handleFetchRun);
+app.post('/api/fetch/run', auth, handleFetchRun);
 
 app.use(handleUnhandledError);
 

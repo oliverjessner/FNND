@@ -1,5 +1,17 @@
 node_modules
 .DS_Store
+.env
+.env.*
+!.env.example
 data.db
+*.db
+*.sqlite
 dist
+build/
+!electron/build/
+!electron/build/icons/
+!electron/build/icons/**
+.next/
+coverage/
+*.log
 data.db-journal

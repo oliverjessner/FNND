@@ -815,6 +815,20 @@ function getSelectedDigestExcludedFeedIds() {
     return normalizeDigestSettingFeedIds(selected);
 }
 
+function clearElement(element) {
+    if (element) {
+        element.replaceChildren();
+    }
+}
+
+function appendSelectOption(select, value, label) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+    return option;
+}
+
 function renderDigestSettings() {
     const excludedSet = new Set(
         normalizeDigestSettingFeedIds(state.digestSettings?.excludedFeedIds || []).map(feedId => String(feedId)),
@@ -824,7 +838,7 @@ function renderDigestSettings() {
         return;
     }
 
-    dom.digest.settings.feedsList.innerHTML = '';
+    clearElement(dom.digest.settings.feedsList);
 
     if (!Array.isArray(state.feeds) || state.feeds.length === 0) {
         const empty = document.createElement('div');
@@ -862,7 +876,7 @@ function renderDigestSettings() {
         });
     }
 
-    dom.digest.settings.blockWordsList.innerHTML = '';
+    clearElement(dom.digest.settings.blockWordsList);
 
     const blockedWords = Array.isArray(state.digestSettings?.blockedWords) ? state.digestSettings.blockedWords : [];
 
@@ -1055,7 +1069,7 @@ function renderTopics() {
         return;
     }
 
-    dom.elements.topicsList.innerHTML = '';
+    clearElement(dom.elements.topicsList);
 
     if (!Array.isArray(state.topics) || state.topics.length === 0) {
         writeContent(dom.elements.topicsState, 'No topics configured yet.');
@@ -1106,7 +1120,7 @@ function renderTopics() {
         deleteBtn.className = 'btn danger';
         deleteBtn.textContent = 'remove';
         deleteBtn.addEventListener('click', async () => {
-            if (!confirm(`Delete topic \"${topic.label || topic.slug}\"?`)) {
+            if (!confirm(['Delete topic "', topic.label || topic.slug, '"?'].join(''))) {
                 return;
             }
             try {
@@ -1264,7 +1278,15 @@ async function reprocessTopicsForAllArticles() {
         const result = await apiFetch('/api/topics/reprocess', { method: 'POST' });
         setStatus(
             dom.elements.topicsReprocessStatus,
-            `Done: ${result.processed} processed · ${result.assignedArticles} with topics · ${result.topicAssignments} assignments`,
+            [
+                'Done: ',
+                result.processed,
+                ' processed · ',
+                result.assignedArticles,
+                ' with topics · ',
+                result.topicAssignments,
+                ' assignments',
+            ].join(''),
         );
     } catch (err) {
         setStatus(dom.elements.topicsReprocessStatus, `Error: ${err.message}`);
@@ -1310,7 +1332,7 @@ function isAbortError(err) {
 }
 
 function renderFeeds() {
-    dom.elements.feedsList.innerHTML = '';
+    clearElement(dom.elements.feedsList);
 
     if (state.feeds.length === 0) {
         writeContent(dom.elements.feedsState, 'No feeds yet.');
@@ -1346,7 +1368,7 @@ function renderFeeds() {
         });
 
         node.querySelector('.btn-delete').addEventListener('click', async () => {
-            if (!confirm(`Delete feed "${feed.name}"?`)) return;
+            if (!confirm(['Delete feed "', feed.name, '"?'].join(''))) return;
             try {
                 await apiFetch(`/api/feeds/${feed.id}`, { method: 'DELETE' });
                 await loadFeeds();
@@ -1361,7 +1383,7 @@ function renderFeeds() {
 }
 
 function renderLists() {
-    dom.elements.listsList.innerHTML = '';
+    clearElement(dom.elements.listsList);
 
     if (state.lists.length === 0) {
         writeContent(dom.elements.listsState, 'No lists yet.');
@@ -1395,7 +1417,7 @@ function renderLists() {
         });
 
         node.querySelector('.btn-delete').addEventListener('click', async () => {
-            if (!confirm(`Delete list "${list.name}"?`)) {
+            if (!confirm(['Delete list "', list.name, '"?'].join(''))) {
                 return;
             }
             try {
@@ -1426,11 +1448,8 @@ async function openListModal(articleIdsOrId) {
     }
 
     pendingArticleIds = articleIds;
-    dom.modal.modalListSelect.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'Choose list';
-    dom.modal.modalListSelect.appendChild(placeholder);
+    clearElement(dom.modal.modalListSelect);
+    appendSelectOption(dom.modal.modalListSelect, '', 'Choose list');
 
     let existingIds = new Set();
     let existingLists = [];
@@ -1466,7 +1485,7 @@ async function openListModal(articleIdsOrId) {
     });
 
     if (dom.modal.modalExistingLists) {
-        dom.modal.modalExistingLists.innerHTML = '';
+        clearElement(dom.modal.modalExistingLists);
         if (existingLists.length === 0) {
             dom.modal.modalExistingLists.textContent = '—';
         } else {
@@ -1552,7 +1571,8 @@ async function loadLists() {
 
 function renderFilterOptions() {
     const selected = dom.elements.filterSource.value;
-    dom.elements.filterSource.innerHTML = '<option value="">all sources</option>';
+    clearElement(dom.elements.filterSource);
+    appendSelectOption(dom.elements.filterSource, '', 'all sources');
     state.feeds.forEach(feed => {
         const option = document.createElement('option');
         option.value = feed.id;
@@ -1564,7 +1584,8 @@ function renderFilterOptions() {
 
 function renderListFilterOptions() {
     const selected = dom.elements.filterList.value;
-    dom.elements.filterList.innerHTML = '<option value="">all lists</option>';
+    clearElement(dom.elements.filterList);
+    appendSelectOption(dom.elements.filterList, '', 'all lists');
     state.lists.forEach(list => {
         const option = document.createElement('option');
         option.value = list.id;
@@ -1579,7 +1600,8 @@ function renderTopicFilterOptions() {
         return;
     }
     const selected = dom.elements.filterTopic.value;
-    dom.elements.filterTopic.innerHTML = '<option value="">all topics</option>';
+    clearElement(dom.elements.filterTopic);
+    appendSelectOption(dom.elements.filterTopic, '', 'all topics');
     state.topics.forEach(topic => {
         const option = document.createElement('option');
         option.value = topic.slug;
@@ -2047,7 +2069,7 @@ function renderArticles(articles, { requestKey = '' } = {}) {
     articlesRuntime.lastRequestKey = normalizedRequestKey;
     articlesRuntime.lastRenderFingerprint = nextFingerprint;
     articlesRuntime.articleById = articleById;
-    dom.elements.articlesList.innerHTML = '';
+    clearElement(dom.elements.articlesList);
 
     if (normalizedArticles.length === 0) {
         writeContent(dom.elements.articlesState, 'Nothing found, try other search input or delete all');
@@ -2202,7 +2224,7 @@ function renderDigestClusters(payload) {
     const activeRange = normalizeDigestRange(payload?.variant || digestRange);
     const clusters = sortDigestClusters(Array.isArray(payload?.clusters) ? payload.clusters : []);
     const digestArticleById = new Map();
-    dom.digest.list.innerHTML = '';
+    clearElement(dom.digest.list);
     digestRuntime.articleById = digestArticleById;
 
     if (clusters.length === 0) {
@@ -2236,7 +2258,7 @@ function renderDigestClusters(payload) {
             titleEl.textContent = cluster.clusterTitle || representative.title || 'Untitled';
         }
         if (sourcesEl) {
-            sourcesEl.innerHTML = '';
+            clearElement(sourcesEl);
             const sourcesMap = new Map();
             items.forEach(item => {
                 const key = String(item.sourceName || 'Unknown source');
@@ -2293,7 +2315,7 @@ function renderDigestClusters(payload) {
 
         if (itemsGridEl) {
             const clusterArticleIds = getDigestClusterArticleIds(cluster);
-            itemsGridEl.innerHTML = '';
+            clearElement(itemsGridEl);
             itemsGridEl.classList.toggle('is-single-item', items.length === 1);
             items.forEach(item => {
                 const card = document.createElement('article');
@@ -2518,7 +2540,7 @@ async function loadDigest({ force = false, silent = false } = {}) {
     digestRuntime.activeRequestRange = activeRange;
 
     if (showLoadingState) {
-        dom.digest.list.innerHTML = '';
+        clearElement(dom.digest.list);
         writeContent(dom.digest.state, 'Loading…');
         show(dom.digest.state);
         updateDigestMarkAllButton({ clusters: [] });

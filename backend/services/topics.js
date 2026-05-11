@@ -134,7 +134,7 @@ function normalizeTopicDefinition(slug, rawTopic = {}) {
 
     const label = normalizeWhitespace(rawTopic.label || slugToLabel(normalizedSlug) || normalizedSlug);
     if (!label) {
-        throw new Error(`Topic "${normalizedSlug}" needs a label`);
+        throw new Error(['Topic "', normalizedSlug, '" needs a label'].join(''));
     }
 
     const topic = {
@@ -147,7 +147,7 @@ function normalizeTopicDefinition(slug, rawTopic = {}) {
 
     const keywordCount = topic.strong.length + topic.medium.length + topic.weak.length;
     if (keywordCount === 0) {
-        throw new Error(`Topic "${normalizedSlug}" needs at least one keyword`);
+        throw new Error(['Topic "', normalizedSlug, '" needs at least one keyword'].join(''));
     }
 
     return topic;
@@ -176,7 +176,7 @@ export function validateAndNormalizeTopicDefinitions(input) {
 
     const normalized = rawTopics.map(topic => {
         if (seen.has(topic.slug)) {
-            throw new Error(`Duplicate topic slug: ${topic.slug}`);
+            throw new Error(['Duplicate topic slug: ', topic.slug].join(''));
         }
         seen.add(topic.slug);
         return topic;
@@ -202,7 +202,7 @@ async function ensureTopicsRulesFileExists() {
     try {
         await access(TOPIC_RULES_FILE_PATH);
     } catch {
-        await writeFile(TOPIC_RULES_FILE_PATH, `${toStableJson(DEFAULT_TOPIC_RULES)}\n`, 'utf-8');
+        await writeFile(TOPIC_RULES_FILE_PATH, toStableJson(DEFAULT_TOPIC_RULES) + '\n', 'utf-8');
     }
 }
 
@@ -218,7 +218,7 @@ async function readTopicRulesFile() {
 
 async function writeTopicRulesFile(definitions) {
     const nextRaw = toStableJson(definitionsToRulesObject(definitions));
-    await writeFile(TOPIC_RULES_FILE_PATH, `${nextRaw}\n`, 'utf-8');
+    await writeFile(TOPIC_RULES_FILE_PATH, [nextRaw, '\n'].join(''), 'utf-8');
     return nextRaw;
 }
 
@@ -270,19 +270,22 @@ async function saveTopicDefinitionsToDatabase(definitions) {
             });
 
             await run(
-                `INSERT INTO topics (slug, label, configJson, createdAt, updatedAt)
-                 VALUES (?, ?, ?, datetime('now'), datetime('now'))
-                 ON CONFLICT(slug) DO UPDATE SET
-                     label = excluded.label,
-                     configJson = excluded.configJson,
-                     updatedAt = datetime('now')`,
+                [
+                    'INSERT INTO topics (slug, label, configJson, createdAt, updatedAt)',
+                    'VALUES (?, ?, ?, datetime(\'now\'), datetime(\'now\'))',
+                    'ON CONFLICT(slug) DO UPDATE SET',
+                    'label = excluded.label,',
+                    'configJson = excluded.configJson,',
+                    'updatedAt = datetime(\'now\')',
+                ].join('\n'),
                 [topic.slug, topic.label, configJson],
             );
         }
 
         if (slugs.length > 0) {
-            const placeholders = slugs.map(() => '?').join(', ');
-            await run(`DELETE FROM topics WHERE slug NOT IN (${placeholders})`, slugs);
+            await run('DELETE FROM topics WHERE slug NOT IN (SELECT value FROM json_each(?))', [
+                JSON.stringify(slugs),
+            ]);
         } else {
             await run('DELETE FROM topics');
         }
@@ -311,7 +314,7 @@ export async function ensureTopicDefinitionsInitialized() {
             path: TOPIC_RULES_FILE_PATH,
             error: err.message,
         });
-        await writeFile(TOPIC_RULES_FILE_PATH, `${toStableJson(DEFAULT_TOPIC_RULES)}\n`, 'utf-8');
+        await writeFile(TOPIC_RULES_FILE_PATH, [toStableJson(DEFAULT_TOPIC_RULES), '\n'].join(''), 'utf-8');
         const fallbackDefinitions = validateAndNormalizeTopicDefinitions(DEFAULT_TOPIC_RULES);
         await saveTopicDefinitionsToDatabase(fallbackDefinitions);
         return fallbackDefinitions;
@@ -421,7 +424,7 @@ function keywordMatchesScope(keyword, scope) {
             .split(' ')
             .map(part => escapeRegex(part))
             .join('\\s+');
-        const phraseRegex = new RegExp(`(^|\\s)${pattern}(?=\\s|$)`, 'u');
+        const phraseRegex = new RegExp(['(^|\\s)', pattern, '(?=\\s|$)'].join(''), 'u');
         return phraseRegex.test(scope.text);
     }
 
@@ -484,7 +487,7 @@ function buildEngineCacheSignature(definitions) {
 }
 
 function toJsonPathKey(slug) {
-    return `$["${String(slug).replace(/"/g, '\\"')}"]`;
+    return ['$["', String(slug).replace(/"/g, '\\"'), '"]'].join('');
 }
 
 function buildThresholdEngine(definitions) {
@@ -494,7 +497,7 @@ function buildThresholdEngine(definitions) {
         const path = toJsonPathKey(definition.slug);
 
         engine.addRule({
-            name: `assign-${definition.slug}`,
+            name: ['assign-', definition.slug].join(''),
             conditions: {
                 all: [{ fact: 'topicScores', path, operator: 'greaterThanInclusive', value: TOPIC_SCORE_ASSIGN_THRESHOLD }],
             },
@@ -505,7 +508,7 @@ function buildThresholdEngine(definitions) {
         });
 
         engine.addRule({
-            name: `low-${definition.slug}`,
+            name: ['low-', definition.slug].join(''),
             conditions: {
                 all: [
                     {
@@ -642,9 +645,11 @@ export async function replaceArticleTopics(articleId, classification) {
         });
 
         await run(
-            `INSERT OR REPLACE INTO article_topics
-             (articleId, topicSlug, score, matchedTermsJson, createdAt)
-             VALUES (?, ?, ?, ?, datetime('now'))`,
+            [
+                'INSERT OR REPLACE INTO article_topics',
+                '(articleId, topicSlug, score, matchedTermsJson, createdAt)',
+                'VALUES (?, ?, ?, ?, datetime(\'now\'))',
+            ].join('\n'),
             [normalizedArticleId, topic.slug, topic.score, matchedTermsJson],
         );
     }
@@ -677,16 +682,18 @@ export async function getArticleTopics(articleId) {
     }
 
     const rows = await all(
-        `SELECT article_topics.articleId,
-                article_topics.topicSlug,
-                article_topics.score,
-                article_topics.matchedTermsJson,
-                article_topics.createdAt,
-                topics.label
-         FROM article_topics
-         JOIN topics ON topics.slug = article_topics.topicSlug
-         WHERE article_topics.articleId = ?
-         ORDER BY article_topics.score DESC, article_topics.topicSlug ASC`,
+        [
+            'SELECT article_topics.articleId,',
+            'article_topics.topicSlug,',
+            'article_topics.score,',
+            'article_topics.matchedTermsJson,',
+            'article_topics.createdAt,',
+            'topics.label',
+            'FROM article_topics',
+            'JOIN topics ON topics.slug = article_topics.topicSlug',
+            'WHERE article_topics.articleId = ?',
+            'ORDER BY article_topics.score DESC, article_topics.topicSlug ASC',
+        ].join('\n'),
         [normalizedArticleId],
     );
 
@@ -733,9 +740,11 @@ export async function reprocessTopicClassificationForAllArticles() {
             for (const topic of assignedTopics) {
                 counters.topicAssignments += 1;
                 await run(
-                    `INSERT OR REPLACE INTO article_topics
-                     (articleId, topicSlug, score, matchedTermsJson, createdAt)
-                     VALUES (?, ?, ?, ?, datetime('now'))`,
+                    [
+                        'INSERT OR REPLACE INTO article_topics',
+                        '(articleId, topicSlug, score, matchedTermsJson, createdAt)',
+                        'VALUES (?, ?, ?, ?, datetime(\'now\'))',
+                    ].join('\n'),
                     [
                         article.id,
                         topic.slug,
@@ -786,14 +795,14 @@ export async function upsertTopic(topicInput, { existingSlug = null } = {}) {
     const baseSlug = normalizeTopicSlug(existingSlug || topicInput?.slug);
 
     if (existingSlug && !current.some(topic => topic.slug === baseSlug)) {
-        throw new Error(`Topic not found: ${existingSlug}`);
+        throw new Error(['Topic not found: ', existingSlug].join(''));
     }
 
     const nextTopic = normalizeTopicDefinition(topicInput?.slug || baseSlug, topicInput);
     const filtered = current.filter(topic => topic.slug !== baseSlug);
 
     if (filtered.some(topic => topic.slug === nextTopic.slug)) {
-        throw new Error(`Topic slug already exists: ${nextTopic.slug}`);
+        throw new Error(['Topic slug already exists: ', nextTopic.slug].join(''));
     }
 
     const nextDefinitions = [...filtered, nextTopic];

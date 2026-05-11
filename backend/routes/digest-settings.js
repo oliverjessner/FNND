@@ -1,5 +1,6 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
+import { auth } from '../middleware/auth.js';
 import { publish } from '../services/events.js';
 
 const router = express.Router();
@@ -43,17 +44,18 @@ async function getDigestSettingsPayload() {
     };
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', auth, async (_req, res) => {
     return res.json(await getDigestSettingsPayload());
 });
 
-router.put('/excluded-feeds', async ({ body }, res) => {
+router.put('/excluded-feeds', auth, async ({ body }, res) => {
     const incomingFeedIds = normalizeFeedIds(body?.feedIds);
 
     let validFeedIds = [];
     if (incomingFeedIds.length > 0) {
-        const placeholders = incomingFeedIds.map(() => '?').join(', ');
-        const rows = await all(`SELECT id FROM feeds WHERE id IN (${placeholders})`, incomingFeedIds);
+        const rows = await all('SELECT id FROM feeds WHERE id IN (SELECT value FROM json_each(?))', [
+            JSON.stringify(incomingFeedIds),
+        ]);
         const validIdSet = new Set(
             rows.map(row => Number(row.id)).filter(feedId => Number.isInteger(feedId) && feedId > 0),
         );
@@ -85,7 +87,7 @@ router.put('/excluded-feeds', async ({ body }, res) => {
     return res.json(await getDigestSettingsPayload());
 });
 
-router.post('/blocked-words', async ({ body }, res) => {
+router.post('/blocked-words', auth, async ({ body }, res) => {
     const word = normalizeBlockedWord(body?.word);
 
     if (word.length < 2) {
@@ -120,7 +122,7 @@ router.post('/blocked-words', async ({ body }, res) => {
     });
 });
 
-router.delete('/blocked-words/:id', async ({ params: { id } }, res) => {
+router.delete('/blocked-words/:id', auth, async ({ params: { id } }, res) => {
     const blockedWordId = Number(id);
     if (!Number.isInteger(blockedWordId) || blockedWordId <= 0) {
         return res.status(400).json({ error: 'Invalid blocked word id' });

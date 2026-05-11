@@ -1,3 +1,7 @@
+## 0.5.1
+
+- fixed vibe coding problems with https://github.com/oliverjessner/ItWorksBut
+
 ## 0.5.0
 
 - ui overhaul, more hierarchy depth
