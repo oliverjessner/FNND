@@ -46,6 +46,7 @@
             "!electron/dist/**",
             "!electron/package/**",
             "backend/**",
+            "migrations/**",
             "public/**",
             "backend/database/**",
             "scripts/**",
