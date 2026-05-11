@@ -29,9 +29,9 @@
         "rss-parser": "^3.13.0"
     },
     "devDependencies": {
+        "@electron/rebuild": "^4.0.4",
         "electron": "^28.3.3",
-        "electron-builder": "^24.13.3",
-        "electron-rebuild": "^3.2.9"
+        "electron-builder": "^24.13.3"
     },
     "build": {
         "directories": {
