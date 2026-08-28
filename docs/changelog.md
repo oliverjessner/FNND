@@ -1,8 +1,9 @@
 ## 1.0.0
 
 - UX overhaul
-- CLI
+- Adding CLI
 - Topic improvement
+- complete Database overhaul
 
 ## 0.5.1
 
