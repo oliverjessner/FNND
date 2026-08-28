@@ -4,6 +4,8 @@
 - Adding CLI
 - Topic improvement
 - complete Database overhaul
+- updated many deps
+- improve CSS, JS, backend perf
 
 ## 0.5.1
 
