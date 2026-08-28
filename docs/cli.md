@@ -1,0 +1,74 @@
+# NO BULLSHIT RSS CLI
+
+The `no-bullshit-rss` CLI reads data already stored by NO BULLSHIT RSS. It does not fetch or configure RSS feeds, start Express, run migrations, or write to the database. SQLite is opened in read-only mode.
+
+## Development setup
+
+Run the CLI directly from the repository or create a local npm link:
+
+```bash
+node ./cli/no-bullshit-rss.js --help
+npm link
+```
+
+After `npm link`, the `no-bullshit-rss` command is available in your shell.
+
+## Latest articles
+
+Print one URL per line:
+
+```bash
+no-bullshit-rss articles last 10 --url
+```
+
+Print one title per line. `--titles` is an alias for `--title`:
+
+```bash
+no-bullshit-rss articles last 10 --title
+no-bullshit-rss articles last 10 --titles
+```
+
+Print the URL and title separated by a tab:
+
+```bash
+no-bullshit-rss articles last 10 --url --title
+```
+
+Without a projection flag, the command returns compact JSON:
+
+```bash
+no-bullshit-rss articles last 10
+```
+
+Articles are ordered by `publishedAt DESC, id DESC`.
+
+## Digests
+
+Digest commands reuse the same date ranges, filtering, and clustering as the app:
+
+```bash
+no-bullshit-rss articles digest 10 --daily
+no-bullshit-rss articles digest 10 --weekly
+no-bullshit-rss articles digest 10 --monthly
+```
+
+If no range is provided, the daily digest is used. The result is a JSON array containing up to the requested number of story clusters.
+
+## Database discovery
+
+The CLI resolves the existing database in this order:
+
+1. An existing file specified by `DB_PATH`.
+2. `data.db` in the current NO-BULLSHIT-RSS repository.
+3. The installed Electron app's `NO-BULLSHIT-RSS/data.db` user-data directory on macOS, Windows, or Linux.
+
+If no existing database is found, the CLI exits with an error. It never creates an empty database.
+
+## Shell usage
+
+Successful results are written to stdout. Errors are written to stderr, so piping and redirection remain clean:
+
+```bash
+no-bullshit-rss articles last 10 --url --title | grep Nvidia
+no-bullshit-rss articles last 10 --url > urls.txt
+```

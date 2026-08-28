@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS articles (
   publishedAt TEXT,
   guidOrHash TEXT NOT NULL UNIQUE CHECK (length(trim(guidOrHash)) > 0),
   dailyDigested INTEGER NOT NULL DEFAULT 0,
+  dismissedAt TEXT,
   createdAt TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (feedId) REFERENCES feeds(id) ON DELETE CASCADE
 );
@@ -30,6 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_articles_feedId_publishedAt_id ON articles (feedI
 CREATE INDEX IF NOT EXISTS idx_articles_undigested_published_id
   ON articles (publishedAt DESC, id DESC)
   WHERE dailyDigested = 0;
+CREATE INDEX IF NOT EXISTS idx_articles_active_published_id
+  ON articles (publishedAt DESC, id DESC)
+  WHERE dismissedAt IS NULL;
 
 CREATE TABLE IF NOT EXISTS lists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

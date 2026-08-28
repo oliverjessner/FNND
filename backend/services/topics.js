@@ -126,6 +126,24 @@ function normalizeKeywordList(value) {
     return normalized;
 }
 
+function normalizeTopicType(value) {
+    const normalized = normalizeWhitespace(value).toLowerCase();
+    return normalized || null;
+}
+
+function normalizeMinMatches(value) {
+    if (value === undefined || value === null || value === '') {
+        return 1;
+    }
+
+    const normalized = Number(value);
+    if (!Number.isInteger(normalized) || normalized < 1) {
+        throw new Error('Topic minMatches must be an integer greater than or equal to 1');
+    }
+
+    return normalized;
+}
+
 function normalizeTopicDefinition(slug, rawTopic = {}) {
     const normalizedSlug = normalizeTopicSlug(slug);
     if (!normalizedSlug) {
@@ -140,6 +158,9 @@ function normalizeTopicDefinition(slug, rawTopic = {}) {
     const topic = {
         slug: normalizedSlug,
         label,
+        type: normalizeTopicType(rawTopic.type),
+        minMatches: normalizeMinMatches(rawTopic.minMatches),
+        exclude: normalizeKeywordList(rawTopic.exclude),
         strong: normalizeKeywordList(rawTopic.strong),
         medium: normalizeKeywordList(rawTopic.medium),
         weak: normalizeKeywordList(rawTopic.weak),
@@ -185,16 +206,30 @@ export function validateAndNormalizeTopicDefinitions(input) {
     return normalized.sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
-function definitionsToRulesObject(definitions) {
+export function definitionsToRulesObject(definitions) {
     return definitions.reduce((acc, topic) => {
         acc[topic.slug] = {
             label: topic.label,
+            ...(topic.type ? { type: topic.type } : {}),
+            ...(topic.minMatches !== 1 ? { minMatches: topic.minMatches } : {}),
             strong: topic.strong,
             medium: topic.medium,
             weak: topic.weak,
+            ...(topic.exclude.length > 0 ? { exclude: topic.exclude } : {}),
         };
         return acc;
     }, {});
+}
+
+function topicDefinitionToConfig(topic) {
+    return {
+        type: topic.type,
+        minMatches: topic.minMatches,
+        exclude: topic.exclude,
+        strong: topic.strong,
+        medium: topic.medium,
+        weak: topic.weak,
+    };
 }
 
 async function ensureTopicsRulesFileExists() {
@@ -232,6 +267,9 @@ function parseTopicRow(row) {
 
     return normalizeTopicDefinition(row.slug, {
         label: row.label,
+        type: config.type,
+        minMatches: config.minMatches,
+        exclude: config.exclude,
         strong: config.strong,
         medium: config.medium,
         weak: config.weak,
@@ -263,11 +301,7 @@ async function saveTopicDefinitionsToDatabase(definitions) {
     await run('BEGIN IMMEDIATE');
     try {
         for (const topic of normalized) {
-            const configJson = JSON.stringify({
-                strong: topic.strong,
-                medium: topic.medium,
-                weak: topic.weak,
-            });
+            const configJson = JSON.stringify(topicDefinitionToConfig(topic));
 
             await run(
                 [
@@ -350,6 +384,9 @@ export async function getTopicRowsWithMetadata() {
                 id: Number(row.id),
                 slug: parsed.slug,
                 label: parsed.label,
+                type: parsed.type,
+                minMatches: parsed.minMatches,
+                exclude: parsed.exclude,
                 strong: parsed.strong,
                 medium: parsed.medium,
                 weak: parsed.weak,
@@ -435,45 +472,64 @@ function roundScore(value) {
     return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function findTermLocations(term, scopes, baseWeight = 0) {
+    const locations = [];
+
+    Object.entries(TOPIC_FIELD_MULTIPLIERS).forEach(([field, multiplier]) => {
+        const scope = scopes[field];
+        if (!scope || !keywordMatchesScope(term, scope)) {
+            return;
+        }
+
+        locations.push({
+            field,
+            ...(baseWeight > 0 ? { points: roundScore(baseWeight * multiplier) } : {}),
+        });
+    });
+
+    return locations;
+}
+
 function scoreTopic(topicDefinition, scopes) {
-    let score = 0;
-    const matchedTerms = [];
+    const matchesByCanonicalTerm = new Map();
 
     TOPIC_KEYWORD_GROUPS.forEach(group => {
         const terms = Array.isArray(topicDefinition[group]) ? topicDefinition[group] : [];
         const baseWeight = TOPIC_SCORE_WEIGHTS[group] || 0;
 
         terms.forEach(term => {
-            const locations = [];
+            const canonical = normalizeKeywordToken(term);
+            const locations = findTermLocations(term, scopes, baseWeight);
+            if (locations.length === 0) {
+                return;
+            }
 
-            Object.entries(TOPIC_FIELD_MULTIPLIERS).forEach(([field, multiplier]) => {
-                const scope = scopes[field];
-                if (!scope) {
-                    return;
-                }
-                if (!keywordMatchesScope(term, scope)) {
-                    return;
-                }
-
-                const points = roundScore(baseWeight * multiplier);
-                score += points;
-                locations.push({ field, points });
-            });
-
-            if (locations.length > 0) {
-                matchedTerms.push({
+            const contribution = Math.max(...locations.map(location => location.points));
+            const current = matchesByCanonicalTerm.get(canonical);
+            if (!current || contribution > current.contribution) {
+                matchesByCanonicalTerm.set(canonical, {
                     term,
                     group,
                     baseWeight,
+                    contribution,
                     locations,
                 });
             }
         });
     });
 
+    const matchedTerms = Array.from(matchesByCanonicalTerm.values());
+    const score = matchedTerms.reduce((sum, match) => sum + match.contribution, 0);
+    const excludedTerms = topicDefinition.exclude
+        .map(term => ({ term, locations: findTermLocations(term, scopes) }))
+        .filter(match => match.locations.length > 0);
+
     return {
         score: roundScore(score),
+        distinctMatches: matchedTerms.length,
         matchedTerms,
+        excluded: excludedTerms.length > 0,
+        excludedTerms,
     };
 }
 
@@ -482,6 +538,7 @@ function buildEngineCacheSignature(definitions) {
         definitions.map(definition => ({
             slug: definition.slug,
             label: definition.label,
+            minMatches: definition.minMatches,
         })),
     );
 }
@@ -494,12 +551,26 @@ function buildThresholdEngine(definitions) {
     const engine = new Engine([], { allowUndefinedFacts: true });
 
     definitions.forEach(definition => {
-        const path = toJsonPathKey(definition.slug);
+        const topicPath = toJsonPathKey(definition.slug);
 
         engine.addRule({
             name: ['assign-', definition.slug].join(''),
             conditions: {
-                all: [{ fact: 'topicScores', path, operator: 'greaterThanInclusive', value: TOPIC_SCORE_ASSIGN_THRESHOLD }],
+                all: [
+                    {
+                        fact: 'topicMetrics',
+                        path: `${topicPath}.score`,
+                        operator: 'greaterThanInclusive',
+                        value: TOPIC_SCORE_ASSIGN_THRESHOLD,
+                    },
+                    {
+                        fact: 'topicMetrics',
+                        path: `${topicPath}.distinctMatches`,
+                        operator: 'greaterThanInclusive',
+                        value: definition.minMatches,
+                    },
+                    { fact: 'topicMetrics', path: `${topicPath}.excluded`, operator: 'equal', value: false },
+                ],
             },
             event: {
                 type: 'topic.assign',
@@ -512,12 +583,28 @@ function buildThresholdEngine(definitions) {
             conditions: {
                 all: [
                     {
-                        fact: 'topicScores',
-                        path,
+                        fact: 'topicMetrics',
+                        path: `${topicPath}.score`,
                         operator: 'greaterThanInclusive',
                         value: TOPIC_SCORE_LOW_CONFIDENCE_THRESHOLD,
                     },
-                    { fact: 'topicScores', path, operator: 'lessThan', value: TOPIC_SCORE_ASSIGN_THRESHOLD },
+                    { fact: 'topicMetrics', path: `${topicPath}.excluded`, operator: 'equal', value: false },
+                    {
+                        any: [
+                            {
+                                fact: 'topicMetrics',
+                                path: `${topicPath}.score`,
+                                operator: 'lessThan',
+                                value: TOPIC_SCORE_ASSIGN_THRESHOLD,
+                            },
+                            {
+                                fact: 'topicMetrics',
+                                path: `${topicPath}.distinctMatches`,
+                                operator: 'lessThan',
+                                value: definition.minMatches,
+                            },
+                        ],
+                    },
                 ],
             },
             event: {
@@ -544,9 +631,9 @@ function getThresholdEngine(definitions) {
     return engineCache.engine;
 }
 
-async function evaluateTopicThresholds(definitions, scoreMap) {
+async function evaluateTopicThresholds(definitions, topicMetrics) {
     const engine = getThresholdEngine(definitions);
-    const { events } = await engine.run({ topicScores: scoreMap });
+    const { events } = await engine.run({ topicMetrics });
 
     const assigned = new Set();
     const lowConfidence = new Set();
@@ -590,17 +677,25 @@ export async function classifyArticleTopicsFromDefinitions(article, definitionsI
         return {
             slug: definition.slug,
             label: definition.label,
+            type: definition.type,
             score: scored.score,
+            distinctMatches: scored.distinctMatches,
             matchedTerms: scored.matchedTerms,
+            excluded: scored.excluded,
+            excludedTerms: scored.excludedTerms,
         };
     });
 
-    const topicScoreMap = scoredTopics.reduce((acc, topic) => {
-        acc[topic.slug] = topic.score;
+    const topicMetrics = scoredTopics.reduce((acc, topic) => {
+        acc[topic.slug] = {
+            score: topic.score,
+            distinctMatches: topic.distinctMatches,
+            excluded: topic.excluded,
+        };
         return acc;
     }, {});
 
-    const thresholdResult = await evaluateTopicThresholds(definitions, topicScoreMap);
+    const thresholdResult = await evaluateTopicThresholds(definitions, topicMetrics);
 
     const assignedTopics = scoredTopics
         .filter(topic => thresholdResult.assigned.has(topic.slug))
@@ -641,6 +736,7 @@ export async function replaceArticleTopics(articleId, classification) {
         const matchedTermsJson = JSON.stringify({
             confidence: topic.confidence,
             score: topic.score,
+            distinctMatches: topic.distinctMatches,
             matchedTerms: topic.matchedTerms,
         });
 
@@ -752,6 +848,7 @@ export async function reprocessTopicClassificationForAllArticles() {
                         JSON.stringify({
                             confidence: topic.confidence,
                             score: topic.score,
+                            distinctMatches: topic.distinctMatches,
                             matchedTerms: topic.matchedTerms,
                         }),
                     ],
@@ -846,6 +943,9 @@ export async function getTopicBySlug(slug) {
         id: Number(row.id),
         slug: parsed.slug,
         label: parsed.label,
+        type: parsed.type,
+        minMatches: parsed.minMatches,
+        exclude: parsed.exclude,
         strong: parsed.strong,
         medium: parsed.medium,
         weak: parsed.weak,

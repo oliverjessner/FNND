@@ -24,6 +24,9 @@ function parseTopicPayload(body = {}) {
     return {
         slug: body.slug,
         label: body.label,
+        type: body.type,
+        minMatches: body.minMatches,
+        exclude: Array.isArray(body.exclude) ? body.exclude : String(body.exclude || '').split(/[\n,]/),
         strong: Array.isArray(body.strong) ? body.strong : String(body.strong || '').split(/[\n,]/),
         medium: Array.isArray(body.medium) ? body.medium : String(body.medium || '').split(/[\n,]/),
         weak: Array.isArray(body.weak) ? body.weak : String(body.weak || '').split(/[\n,]/),

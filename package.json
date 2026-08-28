@@ -4,10 +4,14 @@
     "type": "module",
     "description": "RSS-based news aggregator",
     "main": "electron/main.cjs",
+    "bin": {
+        "no-bullshit-rss": "./cli/no-bullshit-rss.js"
+    },
     "scripts": {
         "start": "node backend/server.js",
         "electron": "electron .",
         "dev": "node --watch backend/server.js",
+        "test": "node --test backend/services/topics.test.js backend/services/topics-persistence.test.js backend/routes/articles-triage.test.js cli/*.test.js",
         "test:topics": "node --test backend/services/topics.test.js",
         "db:init": "node scripts/init-db.js",
         "dist:mac": "electron-rebuild -f -w @vscode/sqlite3 && electron-builder --mac dmg --arm64",
@@ -45,6 +49,7 @@
             "electron/**",
             "!electron/dist/**",
             "!electron/package/**",
+            "cli/**",
             "backend/**",
             "migrations/**",
             "public/**",

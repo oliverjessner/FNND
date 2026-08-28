@@ -8,7 +8,7 @@ SCRIPT_DIR=$(
 cd "$SCRIPT_DIR"
 
 PACKAGE_JSON_FILE="${PACKAGE_JSON_FILE:-package.json}"
-CHANGELOG_FILE="${CHANGELOG_FILE:-changelog.md}"
+CHANGELOG_FILE="${CHANGELOG_FILE:-docs/changelog.md}"
 TAG_PREFIX="${TAG_PREFIX:-v}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 BUILD_COMMAND="${BUILD_COMMAND:-npm run dist:all:workaround}"
@@ -22,7 +22,7 @@ Usage: ./publish.sh [--dry-run]
 
 Stages all changes, creates a release commit, pushes the current branch, runs the
 release build, creates and pushes an annotated git tag from package.json.version
-and the first section in changelog.md, then creates a GitHub release.
+and the first section in docs/changelog.md, then creates a GitHub release.
 
 Options:
   --dry-run   Print the resolved commit, build, tag and release notes without writing anything
@@ -30,7 +30,7 @@ Options:
 
 Environment:
   PACKAGE_JSON_FILE  Override package.json path
-  CHANGELOG_FILE     Override changelog path
+  CHANGELOG_FILE     Override changelog path, defaults to "docs/changelog.md"
   TAG_PREFIX         Tag prefix, defaults to "v"
   GIT_REMOTE         Git remote used with --push, defaults to "origin"
   BUILD_COMMAND      Release build command, defaults to "npm run dist:all:workaround"

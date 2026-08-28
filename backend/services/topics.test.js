@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyArticleTopicsFromDefinitions } from './topics.js';
+import { readFile } from 'node:fs/promises';
+import {
+    classifyArticleTopicsFromDefinitions,
+    definitionsToRulesObject,
+    validateAndNormalizeTopicDefinitions,
+} from './topics.js';
+
+const PROJECT_TOPIC_DEFINITIONS = validateAndNormalizeTopicDefinitions(
+    JSON.parse(await readFile(new URL('../../topics.rules.json', import.meta.url), 'utf-8')),
+);
+
+function getProjectTopic(slug) {
+    const topic = PROJECT_TOPIC_DEFINITIONS.find(definition => definition.slug === slug);
+    assert.ok(topic, `Expected project topic ${slug}`);
+    return topic;
+}
 
 const TOPIC_DEFINITIONS = [
     {
@@ -76,4 +91,162 @@ test('assigns no topic when there are no keyword matches', async () => {
 
     assert.equal(result.assignedTopics.length, 0);
     assert.equal(result.lowConfidenceTopics.length, 0);
+});
+
+test('scores the same keyword only once at its highest-scoring location', async () => {
+    const result = await classifyArticleTopicsFromDefinitions(
+        {
+            title: 'OpenAI launches an update',
+            teaser: 'OpenAI explains the update',
+            content: 'OpenAI published the technical details.',
+        },
+        TOPIC_DEFINITIONS,
+    );
+    const topic = result.assignedTopics.find(entry => entry.slug === 'ki');
+    const match = topic.matchedTerms.find(entry => entry.term === 'openai');
+
+    assert.equal(topic.score, 10);
+    assert.equal(topic.distinctMatches, 1);
+    assert.equal(match.contribution, 10);
+    assert.deepEqual(
+        match.locations.map(location => location.field),
+        ['title', 'teaser', 'body'],
+    );
+});
+
+test('different keywords still accumulate normally', async () => {
+    const result = await classifyArticleTopicsFromDefinitions(
+        { title: 'OpenAI brings ChatGPT to support', teaser: '', content: '' },
+        TOPIC_DEFINITIONS,
+    );
+    const topic = result.assignedTopics.find(entry => entry.slug === 'ki');
+
+    assert.equal(topic.score, 20);
+    assert.equal(topic.distinctMatches, 2);
+});
+
+test('minMatches prevents assignment but preserves a high-score low-confidence result', async () => {
+    const definitions = [{ slug: 'strict', label: 'Strict', minMatches: 2, strong: ['openai'], medium: [], weak: [] }];
+    const result = await classifyArticleTopicsFromDefinitions({ title: 'OpenAI update' }, definitions);
+
+    assert.equal(result.assignedTopics.length, 0);
+    assert.equal(result.lowConfidenceTopics[0].slug, 'strict');
+    assert.equal(result.lowConfidenceTopics[0].distinctMatches, 1);
+});
+
+test('two distinct terms satisfy minMatches 2', async () => {
+    const definitions = [
+        { slug: 'strict', label: 'Strict', minMatches: 2, strong: ['openai', 'chatgpt'], medium: [], weak: [] },
+    ];
+    const result = await classifyArticleTopicsFromDefinitions({ title: 'OpenAI updates ChatGPT' }, definitions);
+
+    assert.equal(result.assignedTopics[0].slug, 'strict');
+    assert.equal(result.assignedTopics[0].distinctMatches, 2);
+});
+
+test('exclude phrases suppress a topic and remain explainable', async () => {
+    const definitions = [
+        {
+            slug: 'meta',
+            label: 'Meta',
+            strong: ['meta'],
+            medium: [],
+            weak: [],
+            exclude: ['meta analyse'],
+        },
+    ];
+    const result = await classifyArticleTopicsFromDefinitions({ title: 'Meta-Analyse zeigt neue Effekte' }, definitions);
+    const scored = result.scoredTopics[0];
+
+    assert.equal(result.assignedTopics.length, 0);
+    assert.equal(result.lowConfidenceTopics.length, 0);
+    assert.equal(scored.excluded, true);
+    assert.equal(scored.excludedTerms[0].term, 'meta analyse');
+});
+
+test('project Meta rules reject Meta-Analyse', async () => {
+    const result = await classifyArticleTopicsFromDefinitions(
+        { title: 'Neue Meta-Analyse zur Gesundheitsforschung' },
+        [getProjectTopic('meta')],
+    );
+
+    assert.equal(result.assignedTopics.length, 0);
+    assert.equal(result.scoredTopics[0].excluded, true);
+});
+
+test('Microsoft Teams assigns Microsoft while generic teams does not', async () => {
+    const microsoft = getProjectTopic('microsoft');
+    const explicit = await classifyArticleTopicsFromDefinitions({ title: 'Microsoft Teams gets an update' }, [microsoft]);
+    const generic = await classifyArticleTopicsFromDefinitions({ title: 'Distributed teams improve collaboration' }, [microsoft]);
+
+    assert.equal(explicit.assignedTopics[0].slug, 'microsoft');
+    assert.equal(generic.assignedTopics.length, 0);
+});
+
+test('AI token usage does not assign Crypto', async () => {
+    const result = await classifyArticleTopicsFromDefinitions(
+        { title: 'LLM token limits improve for AI models', teaser: 'Token context windows grow' },
+        [getProjectTopic('crypto')],
+    );
+
+    assert.equal(result.assignedTopics.length, 0);
+});
+
+test('Bitcoin and blockchain still assign Crypto', async () => {
+    const result = await classifyArticleTopicsFromDefinitions(
+        { title: 'Bitcoin adoption grows', teaser: 'Blockchain infrastructure expands' },
+        [getProjectTopic('crypto')],
+    );
+
+    assert.equal(result.assignedTopics[0].slug, 'crypto');
+    assert.equal(result.assignedTopics[0].distinctMatches, 2);
+});
+
+test('metaphorical game does not assign Gaming but platform terms do', async () => {
+    const gaming = getProjectTopic('gaming');
+    const metaphor = await classifyArticleTopicsFromDefinitions({ title: 'The hiring game has changed' }, [gaming]);
+    const platforms = await classifyArticleTopicsFromDefinitions(
+        { title: 'Steam, PlayStation and Nintendo announce releases' },
+        [gaming],
+    );
+
+    assert.equal(metaphor.assignedTopics.length, 0);
+    assert.equal(platforms.assignedTopics[0].slug, 'gaming');
+    assert.equal(platforms.assignedTopics[0].distinctMatches, 3);
+});
+
+test('punctuation variants use the existing normalization', async () => {
+    const definitions = [{ slug: 'ai', label: 'AI', strong: ['fine tuning'], medium: [], weak: [] }];
+    const result = await classifyArticleTopicsFromDefinitions({ title: 'Fine-tuning models safely' }, definitions);
+
+    assert.equal(result.assignedTopics[0].slug, 'ai');
+});
+
+test('type and optional fields survive JSON validation and serialization', () => {
+    const normalized = validateAndNormalizeTopicDefinitions({
+        example: {
+            label: 'Example',
+            type: ' Technology ',
+            minMatches: 2,
+            exclude: ['not this'],
+            strong: ['signal'],
+            medium: [],
+            weak: [],
+        },
+    });
+    const loaded = validateAndNormalizeTopicDefinitions(JSON.parse(JSON.stringify(definitionsToRulesObject(normalized))));
+
+    assert.equal(loaded[0].type, 'technology');
+    assert.equal(loaded[0].minMatches, 2);
+    assert.deepEqual(loaded[0].exclude, ['not this']);
+});
+
+test('legacy definitions receive backwards-compatible defaults', () => {
+    const [topic] = validateAndNormalizeTopicDefinitions({
+        ki: { label: 'KI', strong: ['openai'], medium: ['anthropic'], weak: ['modell'] },
+    });
+
+    assert.equal(topic.type, null);
+    assert.equal(topic.minMatches, 1);
+    assert.deepEqual(topic.exclude, []);
 });

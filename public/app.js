@@ -18,6 +18,7 @@ const dom = Object.freeze({
     elements: Object.freeze({
         articlesState: document.getElementById('articles-state'),
         articlesList: document.getElementById('articles-list'),
+        articlesLoadMore: document.getElementById('articles-load-more'),
         feedsState: document.getElementById('feeds-state'),
         feedsList: document.getElementById('feeds-list'),
         filterList: document.getElementById('filter-list'),
@@ -25,6 +26,12 @@ const dom = Object.freeze({
         filterTopic: document.getElementById('filter-topic'),
         runFetchBtn: document.getElementById('run-fetch'),
         toggleLayoutBtn: document.getElementById('toggle-layout'),
+        layoutOptions: document.querySelectorAll('#toggle-layout .view-toggle-option'),
+        feedCount: document.getElementById('feed-count'),
+        activeFilterRow: document.getElementById('active-filter-row'),
+        activeFilterChips: document.getElementById('active-filter-chips'),
+        toastRegion: document.getElementById('toast-region'),
+        feedBackToTop: document.getElementById('feed-back-to-top'),
         themeToggleBtn: document.getElementById('theme-toggle'),
         fetchStatus: document.getElementById('fetch-status'),
         articleCountStatus: document.getElementById('article-count-status'),
@@ -101,6 +108,7 @@ const dom = Object.freeze({
         ),
         subtitle: document.getElementById('digest-subtitle'),
         markAllBtn: document.getElementById('digest-mark-all'),
+        bulkMenu: document.getElementById('digest-bulk-menu'),
         rangeToggle: document.getElementById('digest-range-toggle'),
         rangeOptions: document.querySelectorAll('#digest-range-toggle .digest-range-option'),
         sortToggle: document.getElementById('digest-sort-toggle'),
@@ -134,6 +142,7 @@ const localStorageKeys = Object.freeze({
     viewerWidthKey: 'fnnd.viewerWidth',
 });
 const CONFIG = Object.freeze({
+    ARTICLES_PAGE_SIZE: 50,
     SEARCH_DEBOUNCE_MS: 400,
     SEARCH_LOADING_DELAY_MS: 150,
     MAX_WORD_LENGTH: 120,
@@ -159,6 +168,10 @@ const articlesRuntime = Object.seal({
     requestId: 0,
     activeRequestController: null,
     articleById: new Map(),
+    articles: [],
+    hasMore: false,
+    isLoadingMore: false,
+    focusedArticleId: null,
 });
 const modalRuntime = Object.seal({
     lastFocusedElement: null,
@@ -183,6 +196,7 @@ let activeArticleId = null;
 let viewerTitle = 'Article viewer';
 let viewerMessage = '';
 let viewerWidth = normalizeViewerWidth(localStorage.getItem(localStorageKeys.viewerWidthKey));
+let toastTimer = null;
 
 function normalizeDigestRange(value) {
     const normalized = String(value || '')
@@ -281,10 +295,10 @@ function getDigestRangeLabel(range = digestRange) {
     const normalized = normalizeDigestRange(range);
 
     if (normalized === 'month') {
-        return 'month';
+        return 'Month';
     }
 
-    return normalized === 'week' ? 'week' : 'day';
+    return normalized === 'week' ? 'Week' : 'Day';
 }
 
 function getDigestEmptyStateMessage(range = digestRange) {
@@ -350,17 +364,9 @@ function getDigestClusterSortTime(cluster) {
 
 function sortDigestClusters(clusters) {
     return [...clusters].sort((left, right) => {
-        const leftCount = Number(left?.clusterCount || 0);
-        const rightCount = Number(right?.clusterCount || 0);
-        const countDiff = digestSortDirection === 'asc' ? leftCount - rightCount : rightCount - leftCount;
         const leftTime = getDigestClusterSortTime(left);
         const rightTime = getDigestClusterSortTime(right);
-
-        if (countDiff !== 0) {
-            return countDiff;
-        }
-
-        return rightTime - leftTime;
+        return digestSortDirection === 'asc' ? leftTime - rightTime : rightTime - leftTime;
     });
 }
 
@@ -394,7 +400,10 @@ function updateDigestMarkAllButton(payload = digestRuntime.lastPayload) {
     }
 
     dom.digest.markAllBtn.disabled = total === 0;
-    writeContent(dom.digest.markAllBtn, total > 0 ? `Mark all as digested (${total})` : 'Mark all as digested');
+    writeContent(
+        dom.digest.markAllBtn,
+        total > 0 ? `Mark visible as digested (${total})` : 'Mark visible as digested',
+    );
 }
 
 function getNormalizedArticleIds(value) {
@@ -529,9 +538,9 @@ function applyDigestLocalMutationUi() {
     return updateDigestMarkAllButton(digestRuntime.lastPayload);
 }
 
-async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'Digest content', options = {}) {
+async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'Mark as digested', options = {}) {
     const ids = getNormalizedArticleIds(articleIds);
-    const { refresh = true, skipNextDigestEvent = false } = options;
+    const { refresh = true, skipNextDigestEvent = false, toastMessage = '' } = options;
     const previousLabel = triggerBtn ? triggerBtn.textContent : '';
 
     if (ids.length === 0) {
@@ -540,7 +549,7 @@ async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'D
 
     if (triggerBtn) {
         triggerBtn.disabled = true;
-        triggerBtn.textContent = 'Digesting…';
+        triggerBtn.textContent = 'Marking…';
     }
     if (skipNextDigestEvent) {
         digestRuntime.pendingMutationEventsToSkip += 1;
@@ -550,6 +559,18 @@ async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'D
         await apiFetch('/api/articles/digest/mark-all-digested', {
             method: 'POST',
             body: JSON.stringify({ articleIds: ids }),
+        });
+        const defaultToastMessage = `${ids.length.toLocaleString('en-US')} ${ids.length === 1 ? 'source' : 'sources'} marked as digested`;
+        showToast(toastMessage || defaultToastMessage, {
+            actionLabel: 'Undo',
+            onAction: async () => {
+                await apiFetch('/api/articles/digest/restore', {
+                    method: 'POST',
+                    body: JSON.stringify({ articleIds: ids }),
+                });
+                digestRuntime.needsRefresh = true;
+                await loadDigest({ force: true });
+            },
         });
         if (refresh) {
             digestRuntime.needsRefresh = true;
@@ -571,7 +592,10 @@ async function markDigestArticlesByIds(articleIds, triggerBtn, triggerLabel = 'D
 
 async function markAllVisibleAsDigested() {
     const articleIds = getDigestArticleIds(digestRuntime.lastPayload);
-    await markDigestArticlesByIds(articleIds, dom.digest.markAllBtn, 'Mark all as digested');
+    if (dom.digest.bulkMenu) {
+        dom.digest.bulkMenu.open = false;
+    }
+    await markDigestArticlesByIds(articleIds, dom.digest.markAllBtn, 'Mark visible as digested');
 
     if (!dom.digest.markAllBtn) {
         return;
@@ -619,17 +643,11 @@ function applyLayoutState() {
     };
 
     dom.elements.articlesList.classList.toggle('is-list', isListLayout);
-    applyToggleState(
-        dom.elements.toggleLayoutBtn,
-        isListLayout,
-        {
-            onLabel: 'List',
-            offLabel: 'Cards',
-            onValue: 'list',
-            offValue: 'cards',
-        },
-        'layout',
-    );
+    dom.elements.layoutOptions.forEach(option => {
+        const isActive = option.dataset.layout === (isListLayout ? 'list' : 'cards');
+        option.classList.toggle('is-active', isActive);
+        option.setAttribute('aria-pressed', String(isActive));
+    });
 
     if (dom.elements.themeToggleBtn) {
         applyToggleState(
@@ -672,6 +690,11 @@ function updateStickySubnavScrollState() {
         const isDigestVisible = digestView?.classList.contains('is-active');
         dom.digest.header.classList.toggle('is-scrolled', Boolean(isDigestVisible && isScrolled));
     }
+
+    if (dom.elements.feedBackToTop) {
+        const isFeedVisible = dom.views.main?.classList.contains('is-active');
+        dom.elements.feedBackToTop.classList.toggle('hide', !(isFeedVisible && getPageScrollTop() > 480));
+    }
 }
 
 function scheduleStickySubnavScrollUpdate() {
@@ -693,6 +716,70 @@ function formatDate(value) {
     if (!Number.isFinite(timestamp)) return '—';
 
     return dateTimeFormatter.format(timestamp);
+}
+
+function formatTriageTime(value, referenceDate = new Date()) {
+    const date = new Date(value);
+    if (!value || !Number.isFinite(date.getTime())) {
+        return '—';
+    }
+
+    const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(date);
+    const startToday = new Date(referenceDate);
+    startToday.setHours(0, 0, 0, 0);
+    const startArticleDay = new Date(date);
+    startArticleDay.setHours(0, 0, 0, 0);
+    const dayDifference = Math.round((startToday.getTime() - startArticleDay.getTime()) / 86400000);
+
+    if (dayDifference === 0) {
+        return time;
+    }
+    if (dayDifference === 1) {
+        return `Yesterday · ${time}`;
+    }
+
+    const day = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
+    return `${day} · ${time}`;
+}
+
+function showToast(message, { actionLabel = '', onAction = null } = {}) {
+    if (!dom.elements.toastRegion) {
+        return;
+    }
+    if (toastTimer) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+    }
+
+    clearElement(dom.elements.toastRegion);
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    const text = document.createElement('span');
+    text.textContent = message;
+    toast.appendChild(text);
+
+    if (actionLabel && typeof onAction === 'function') {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.textContent = actionLabel;
+        action.addEventListener('click', async () => {
+            action.disabled = true;
+            try {
+                await onAction();
+                toast.remove();
+            } catch (err) {
+                action.disabled = false;
+                showToast(`Undo failed: ${err.message}`);
+            }
+        });
+        toast.appendChild(action);
+    }
+
+    dom.elements.toastRegion.appendChild(toast);
+    toastTimer = setTimeout(() => {
+        toast.remove();
+        toastTimer = null;
+    }, 6000);
 }
 
 async function loadFetchStatus() {
@@ -1572,11 +1659,11 @@ async function loadLists() {
 function renderFilterOptions() {
     const selected = dom.elements.filterSource.value;
     clearElement(dom.elements.filterSource);
-    appendSelectOption(dom.elements.filterSource, '', 'all sources');
+    appendSelectOption(dom.elements.filterSource, '', 'Source: All');
     state.feeds.forEach(feed => {
         const option = document.createElement('option');
         option.value = feed.id;
-        option.textContent = feed.name;
+        option.textContent = `Source: ${feed.name}`;
         dom.elements.filterSource.appendChild(option);
     });
     dom.elements.filterSource.value = selected;
@@ -1585,11 +1672,11 @@ function renderFilterOptions() {
 function renderListFilterOptions() {
     const selected = dom.elements.filterList.value;
     clearElement(dom.elements.filterList);
-    appendSelectOption(dom.elements.filterList, '', 'all lists');
+    appendSelectOption(dom.elements.filterList, '', 'List: All');
     state.lists.forEach(list => {
         const option = document.createElement('option');
         option.value = list.id;
-        option.textContent = list.name;
+        option.textContent = `List: ${list.name}`;
         dom.elements.filterList.appendChild(option);
     });
     dom.elements.filterList.value = selected;
@@ -1601,11 +1688,11 @@ function renderTopicFilterOptions() {
     }
     const selected = dom.elements.filterTopic.value;
     clearElement(dom.elements.filterTopic);
-    appendSelectOption(dom.elements.filterTopic, '', 'all topics');
+    appendSelectOption(dom.elements.filterTopic, '', 'Topic: All');
     state.topics.forEach(topic => {
         const option = document.createElement('option');
         option.value = topic.slug;
-        option.textContent = topic.label || topic.slug;
+        option.textContent = `Topic: ${topic.label || topic.slug}`;
         dom.elements.filterTopic.appendChild(option);
     });
     dom.elements.filterTopic.value = selected;
@@ -1729,6 +1816,7 @@ function getArticlesPayloadFingerprint(articles) {
             const title = String(article?.title || '');
             const teaser = String(article?.teaser || '');
             const url = String(article?.url || '');
+            const saved = Boolean(article?.saved);
             const topics = Array.isArray(article?.topics) ? article.topics : [];
             const topicsFingerprint = topics
                 .map(topic => {
@@ -1740,7 +1828,7 @@ function getArticlesPayloadFingerprint(articles) {
                 })
                 .join(',');
 
-            return `${articleId}|${feedId}|${publishedAt}|${sourceName}|${title}|${teaser}|${url}|${topicsFingerprint}`;
+            return `${articleId}|${feedId}|${publishedAt}|${sourceName}|${title}|${teaser}|${url}|${saved}|${topicsFingerprint}`;
         })
         .join('||');
 }
@@ -2095,12 +2183,18 @@ function renderArticles(articles, { requestKey = '' } = {}) {
         if (card) {
             if (hasArticleId) {
                 card.dataset.articleId = String(articleId);
+                card.setAttribute('aria-label', article.title || 'Untitled article');
             } else {
                 card.removeAttribute('data-article-id');
             }
         }
 
-        node.querySelector('.meta-date').textContent = formatDate(article.publishedAt);
+        const dateElement = node.querySelector('.meta-date');
+        dateElement.textContent = formatTriageTime(article.publishedAt);
+        if (article.publishedAt) {
+            dateElement.dateTime = article.publishedAt;
+            dateElement.title = formatDate(article.publishedAt);
+        }
 
         const metaSource = node.querySelector('.meta-source');
         const sourceLogo = node.querySelector('.source-logo');
@@ -2135,7 +2229,8 @@ function renderArticles(articles, { requestKey = '' } = {}) {
             }
         }
 
-        node.querySelector('.title').textContent = article.title || 'Untitled';
+        const titleButton = node.querySelector('.article-title-button');
+        titleButton.textContent = article.title || 'Untitled';
         node.querySelector('.teaser').textContent = article.teaser || '';
 
         const contentEl = node.querySelector('.content');
@@ -2173,7 +2268,8 @@ function renderArticles(articles, { requestKey = '' } = {}) {
 
         const readBtn = node.querySelector('.btn-read');
         const externalBtn = node.querySelector('.btn-open-external');
-        const addBtn = node.querySelector('.btn-add');
+        const saveBtn = node.querySelector('.article-save-btn');
+        const dismissBtn = node.querySelector('.article-dismiss-btn');
 
         if (readBtn) {
             if (hasArticleId) {
@@ -2197,13 +2293,25 @@ function renderArticles(articles, { requestKey = '' } = {}) {
             }
         }
 
-        if (addBtn) {
+        if (saveBtn) {
             if (hasArticleId) {
-                addBtn.dataset.articleId = String(articleId);
-                addBtn.disabled = false;
+                saveBtn.dataset.articleId = String(articleId);
+                saveBtn.disabled = false;
+                saveBtn.classList.toggle('is-saved', Boolean(article.saved));
+                saveBtn.textContent = article.saved ? 'Saved' : 'Save';
             } else {
-                addBtn.disabled = true;
-                addBtn.removeAttribute('data-article-id');
+                saveBtn.disabled = true;
+                saveBtn.removeAttribute('data-article-id');
+            }
+        }
+
+        if (dismissBtn) {
+            if (hasArticleId) {
+                dismissBtn.dataset.articleId = String(articleId);
+                dismissBtn.disabled = false;
+            } else {
+                dismissBtn.disabled = true;
+                dismissBtn.removeAttribute('data-article-id');
             }
         }
 
@@ -2214,6 +2322,80 @@ function renderArticles(articles, { requestKey = '' } = {}) {
     dom.elements.articlesList.appendChild(fragment);
     renderArticleViewer();
     return true;
+}
+
+function getFeedCards() {
+    return Array.from(dom.elements.articlesList?.querySelectorAll('.feed-card[data-article-id]') || []);
+}
+
+function setFocusedFeedArticle(articleId, { focus = false, scroll = false } = {}) {
+    const normalizedId = Number(articleId);
+    const cards = getFeedCards();
+    const target = cards.find(card => Number(card.dataset.articleId) === normalizedId) || null;
+    if (!target) {
+        return null;
+    }
+
+    articlesRuntime.focusedArticleId = normalizedId;
+    cards.forEach(card => card.classList.toggle('is-keyboard-active', card === target));
+    if (focus) {
+        target.focus({ preventScroll: true });
+    }
+    if (scroll) {
+        target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    return target;
+}
+
+function moveFeedArticleSelection(direction) {
+    const cards = getFeedCards();
+    if (cards.length === 0) {
+        return;
+    }
+    const currentIndex = cards.findIndex(card => Number(card.dataset.articleId) === articlesRuntime.focusedArticleId);
+    const startIndex = direction > 0 ? 0 : cards.length - 1;
+    const nextIndex = currentIndex < 0 ? startIndex : Math.max(0, Math.min(cards.length - 1, currentIndex + direction));
+    setFocusedFeedArticle(Number(cards[nextIndex].dataset.articleId), { focus: true, scroll: true });
+}
+
+async function dismissFeedArticle(articleId) {
+    const normalizedId = Number(articleId);
+    const card = getFeedCards().find(item => Number(item.dataset.articleId) === normalizedId);
+    if (!Number.isInteger(normalizedId) || normalizedId <= 0 || !card) {
+        return;
+    }
+
+    const nextCard = card.nextElementSibling || card.previousElementSibling;
+    card.classList.add('is-removing');
+    card.remove();
+    articlesRuntime.articleById.delete(normalizedId);
+    articlesRuntime.articles = articlesRuntime.articles.filter(article => Number(article?.id) !== normalizedId);
+    if (nextCard?.dataset?.articleId) {
+        setFocusedFeedArticle(Number(nextCard.dataset.articleId));
+    }
+
+    try {
+        await apiFetch(`/api/articles/${normalizedId}/dismissed`, {
+            method: 'PATCH',
+            body: JSON.stringify({ dismissed: true }),
+        });
+        await loadFeedCount();
+        showToast('Article dismissed', {
+            actionLabel: 'Undo',
+            onAction: async () => {
+                await apiFetch(`/api/articles/${normalizedId}/dismissed`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ dismissed: false }),
+                });
+                articlesRuntime.lastRenderFingerprint = '';
+                await loadArticles({ showLoadingRow: false });
+            },
+        });
+    } catch (err) {
+        articlesRuntime.lastRenderFingerprint = '';
+        await loadArticles({ showLoadingRow: false });
+        showToast(`Dismiss failed: ${err.message}`);
+    }
 }
 
 function renderDigestClusters(payload) {
@@ -2247,12 +2429,21 @@ function renderDigestClusters(payload) {
         const sourcesEl = node.querySelector('.digest-cluster-sources');
         const itemsGridEl = node.querySelector('.digest-items-grid');
         const clusterTopics = getDigestClusterTopics(items);
+        const sortedDates = items
+            .map(item => new Date(item.publishedAt))
+            .filter(date => Number.isFinite(date.getTime()))
+            .sort((left, right) => left.getTime() - right.getTime());
+        const firstReport = sortedDates[0] || null;
+        const latestReport = sortedDates[sortedDates.length - 1] || null;
 
         if (countEl) {
-            countEl.textContent = cluster.clusterCount > 1 ? `${cluster.clusterCount} similar articles` : '1 article';
+            const sourceCount = new Set(items.map(item => String(item.sourceName || '').trim()).filter(Boolean)).size;
+            countEl.textContent = `${sourceCount || 1} ${sourceCount === 1 ? 'source' : 'sources'}`;
         }
         if (dateEl) {
-            dateEl.textContent = formatDate(representative.publishedAt);
+            const latest = latestReport ? formatTriageTime(latestReport.toISOString()) : '—';
+            const first = firstReport ? formatTriageTime(firstReport.toISOString()) : '—';
+            dateEl.textContent = `Latest ${latest} · First report ${first}`;
         }
         if (titleEl) {
             titleEl.textContent = cluster.clusterTitle || representative.title || 'Untitled';
@@ -2287,14 +2478,9 @@ function renderDigestClusters(payload) {
                     chip.type = 'button';
                     chip.className = 'digest-source-chip';
                     chip.dataset.sourceName = source.name;
-                    if (source.feedId) {
-                        chip.classList.add('is-clickable');
-                        chip.title = `Filter by ${source.name}`;
-                        chip.dataset.feedId = String(source.feedId);
-                    } else {
-                        chip.disabled = true;
-                        chip.removeAttribute('data-feed-id');
-                    }
+                    chip.classList.add('is-clickable');
+                    chip.setAttribute('aria-label', `Filter feed by ${source.name}`);
+                    if (source.feedId) chip.dataset.feedId = String(source.feedId);
 
                     if (source.logo) {
                         const logo = document.createElement('img');
@@ -2325,6 +2511,7 @@ function renderDigestClusters(payload) {
                 const hasItemArticleId = Number.isInteger(itemArticleId) && itemArticleId > 0;
                 card.className = hasUrl ? 'digest-item-card digest-item-card-link' : 'digest-item-card';
                 card.dataset.itemTitle = String(item.title || 'Untitled');
+                card.dataset.sourceName = String(item.sourceName || 'Unknown source');
 
                 if (hasUrl) {
                     card.setAttribute('role', 'link');
@@ -2364,7 +2551,7 @@ function renderDigestClusters(payload) {
 
                 const published = document.createElement('span');
                 published.className = 'digest-item-date';
-                published.textContent = formatDate(item.publishedAt);
+                published.textContent = formatTriageTime(item.publishedAt);
 
                 meta.appendChild(sourceWrap);
                 meta.appendChild(published);
@@ -2373,14 +2560,27 @@ function renderDigestClusters(payload) {
                 itemTitle.className = 'digest-item-title';
                 itemTitle.textContent = item.title || 'Untitled';
 
+                const itemContent = document.createElement('div');
+                itemContent.className = 'digest-item-content';
+                itemContent.appendChild(itemTitle);
+
+                const itemDescription = document.createElement('p');
+                itemDescription.className = 'digest-item-teaser';
+                itemDescription.textContent =
+                    item.teaser || item.summary || item.description || 'No description available.';
+                itemContent.appendChild(itemDescription);
+
+                const openButton = document.createElement('button');
+                openButton.type = 'button';
+                openButton.className = 'btn ghost digest-item-open-btn';
+                openButton.textContent = 'Open link ↗';
+                openButton.disabled = !hasUrl;
+                if (hasItemArticleId) openButton.dataset.articleId = String(itemArticleId);
+                if (hasUrl) openButton.dataset.itemUrl = normalizedItemUrl;
+
                 card.appendChild(meta);
-                card.appendChild(itemTitle);
-                if (item.teaser) {
-                    const itemTeaser = document.createElement('p');
-                    itemTeaser.className = 'digest-item-teaser';
-                    itemTeaser.textContent = item.teaser;
-                    card.appendChild(itemTeaser);
-                }
+                card.appendChild(itemContent);
+                card.appendChild(openButton);
                 itemsGridEl.appendChild(card);
             });
 
@@ -2420,8 +2620,8 @@ function renderDigestClusters(payload) {
 
                 const clusterAddBtn = document.createElement('button');
                 clusterAddBtn.type = 'button';
-                clusterAddBtn.className = 'btn ghost btn-add article-action-btn digest-cluster-add-btn';
-                clusterAddBtn.textContent = '+';
+                clusterAddBtn.className = 'btn ghost digest-cluster-add-btn';
+                clusterAddBtn.textContent = 'Save story';
                 clusterAddBtn.disabled = clusterArticleIds.length === 0;
                 if (clusterAddBtn.disabled) {
                     clusterAddBtn.removeAttribute('data-article-ids');
@@ -2432,8 +2632,7 @@ function renderDigestClusters(payload) {
                 const clusterDigestBtn = document.createElement('button');
                 clusterDigestBtn.type = 'button';
                 clusterDigestBtn.className = 'btn ghost digest-cluster-digest-btn';
-                clusterDigestBtn.textContent =
-                    clusterArticleIds.length > 1 ? `Digest content (${clusterArticleIds.length})` : 'Digest content';
+                clusterDigestBtn.textContent = 'Mark as digested';
                 clusterDigestBtn.disabled = clusterArticleIds.length === 0;
 
                 if (clusterDigestBtn.disabled) {
@@ -2468,7 +2667,7 @@ function renderDigestSubtitle(payload) {
 
     writeContent(
         dom.digest.subtitle,
-        `${getDigestRangeLabel(activeRange)} · ${totalArticles.toLocaleString('de-DE')} articles · ${totalClusters.toLocaleString('de-DE')} clusters`,
+        `${getDigestRangeLabel(activeRange)} · ${totalClusters.toLocaleString('en-US')} stories · ${totalArticles.toLocaleString('en-US')} sources`,
     );
 }
 
@@ -2608,11 +2807,26 @@ async function loadDigest({ force = false, silent = false } = {}) {
     return loadPromise;
 }
 
-async function loadArticles({ showLoadingRow = true } = {}) {
+function updateArticlesPaginationUi() {
+    if (!dom.elements.articlesLoadMore) {
+        return;
+    }
+
+    dom.elements.articlesLoadMore.classList.toggle('hide', !articlesRuntime.hasMore);
+    dom.elements.articlesLoadMore.disabled = articlesRuntime.isLoadingMore;
+    dom.elements.articlesLoadMore.textContent = articlesRuntime.isLoadingMore ? 'Loading more…' : 'Load more';
+}
+
+async function loadArticles({ showLoadingRow = true, append = false } = {}) {
+    if (append && (!articlesRuntime.hasMore || articlesRuntime.isLoadingMore)) {
+        return;
+    }
+
     const params = new URLSearchParams();
     const selectedList = dom.elements.filterList.value;
     const selected = dom.elements.filterSource.value;
     const selectedTopic = dom.elements.filterTopic?.value || '';
+    renderActiveFilterChips();
 
     hide(dom.elements.articlesState);
     writeContent(dom.elements.articlesState, '');
@@ -2636,6 +2850,9 @@ async function loadArticles({ showLoadingRow = true } = {}) {
         params.set('query', query);
     }
     const requestKey = params.toString();
+    const offset = append ? articlesRuntime.articles.length : 0;
+    params.set('limit', String(CONFIG.ARTICLES_PAGE_SIZE + 1));
+    params.set('offset', String(offset));
     const requestId = articlesRuntime.requestId + 1;
     const controller = new AbortController();
 
@@ -2644,16 +2861,33 @@ async function loadArticles({ showLoadingRow = true } = {}) {
     }
     articlesRuntime.requestId = requestId;
     articlesRuntime.activeRequestController = controller;
+    articlesRuntime.isLoadingMore = append;
+    if (!append) {
+        articlesRuntime.hasMore = false;
+    }
+    updateArticlesPaginationUi();
 
     try {
-        const articles = await apiFetch(`/api/articles?${requestKey}`, { signal: controller.signal });
+        const page = await apiFetch(`/api/articles?${params.toString()}`, { signal: controller.signal });
 
         if (requestId !== articlesRuntime.requestId) {
             return;
         }
 
+        const normalizedPage = Array.isArray(page) ? page : [];
+        const visiblePage = normalizedPage.slice(0, CONFIG.ARTICLES_PAGE_SIZE);
+        const combined = append
+            ? [...articlesRuntime.articles, ...visiblePage].filter(
+                  (article, index, articles) =>
+                      articles.findIndex(candidate => Number(candidate?.id) === Number(article?.id)) === index,
+              )
+            : visiblePage;
+
+        articlesRuntime.articles = combined;
+        articlesRuntime.hasMore = normalizedPage.length > CONFIG.ARTICLES_PAGE_SIZE;
         hide(dom.elements.loadingRow);
-        renderArticles(articles, { requestKey });
+        renderArticles(combined, { requestKey });
+        await loadFeedCount();
         articlesNeedsRefresh = false;
     } catch (err) {
         if (isAbortError(err)) {
@@ -2664,13 +2898,32 @@ async function loadArticles({ showLoadingRow = true } = {}) {
         }
 
         hide(dom.elements.loadingRow);
+        if (append) {
+            showToast(`Could not load more articles: ${err.message}`);
+            return;
+        }
         writeContent(dom.elements.articlesState, `Error: ${err.message}`);
         show(dom.elements.articlesState);
         articlesNeedsRefresh = true;
     } finally {
+        articlesRuntime.isLoadingMore = false;
+        updateArticlesPaginationUi();
         if (articlesRuntime.activeRequestController === controller) {
             articlesRuntime.activeRequestController = null;
         }
+    }
+}
+
+async function loadFeedCount() {
+    if (!dom.elements.feedCount) {
+        return;
+    }
+    try {
+        const stats = await apiFetch('/api/articles/stats');
+        const unread = Number(stats?.unread || 0);
+        writeContent(dom.elements.feedCount, `${unread.toLocaleString('en-US')} unread`);
+    } catch {
+        writeContent(dom.elements.feedCount, 'Unread count unavailable');
     }
 }
 
@@ -2705,6 +2958,58 @@ function hasDashboardFiltersApplied() {
     return hasQuery || hasListFilter || hasSourceFilter || hasTopicFilter;
 }
 
+function getSelectedOptionLabel(select, prefix) {
+    const label = String(select?.selectedOptions?.[0]?.textContent || '').trim();
+    return label.replace(new RegExp(`^${prefix}:\\s*`, 'i'), '') || label;
+}
+
+function renderActiveFilterChips() {
+    if (!dom.elements.activeFilterRow || !dom.elements.activeFilterChips) {
+        return;
+    }
+
+    const filters = [];
+    const query = normalizeSearchQuery(dom.elements.searchInput?.value || '');
+    if (query) {
+        filters.push({ key: 'query', label: `“${query}”` });
+    }
+    if (dom.elements.filterTopic?.value) {
+        filters.push({ key: 'topic', label: getSelectedOptionLabel(dom.elements.filterTopic, 'Topic') });
+    }
+    if (dom.elements.filterSource?.value) {
+        filters.push({ key: 'source', label: getSelectedOptionLabel(dom.elements.filterSource, 'Source') });
+    }
+    if (dom.elements.filterList?.value) {
+        filters.push({ key: 'list', label: getSelectedOptionLabel(dom.elements.filterList, 'List') });
+    }
+
+    clearElement(dom.elements.activeFilterChips);
+    filters.forEach(filter => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'active-filter-chip';
+        chip.dataset.filterKey = filter.key;
+        chip.setAttribute('aria-label', `Remove ${filter.label} filter`);
+        chip.textContent = `${filter.label} ×`;
+        dom.elements.activeFilterChips.appendChild(chip);
+    });
+    dom.elements.activeFilterRow.classList.toggle('hide', filters.length === 0);
+}
+
+async function clearSingleDashboardFilter(key) {
+    if (key === 'query') {
+        dom.elements.searchInput.value = '';
+    } else if (key === 'topic' && dom.elements.filterTopic) {
+        dom.elements.filterTopic.value = '';
+    } else if (key === 'source') {
+        dom.elements.filterSource.value = '';
+    } else if (key === 'list') {
+        dom.elements.filterList.value = '';
+    }
+    renderActiveFilterChips();
+    await loadArticles();
+}
+
 async function clearDashboardFilters() {
     if (clearDashboardPromise) {
         return clearDashboardPromise;
@@ -2737,6 +3042,7 @@ async function clearDashboardFilters() {
         if (dom.elements.filterTopic) {
             dom.elements.filterTopic.value = '';
         }
+        renderActiveFilterChips();
         scrollArticlesToTop();
         await loadArticles();
     })();
@@ -3004,6 +3310,11 @@ dom.modal.modalConfirm.addEventListener('click', async () => {
             body: JSON.stringify({ articleIds: pendingArticleIds }),
         });
         closeListModal();
+        articlesRuntime.lastRenderFingerprint = '';
+        if (isViewActive('main')) {
+            await loadArticles({ showLoadingRow: false });
+        }
+        showToast('Saved to list');
     } catch (err) {
         alert(err.message);
     }
@@ -3034,6 +3345,30 @@ dom.elements.filterSource.addEventListener('change', () => loadArticles());
 dom.elements.filterList.addEventListener('change', () => loadArticles());
 if (dom.elements.filterTopic) {
     dom.elements.filterTopic.addEventListener('change', () => loadArticles());
+}
+if (dom.elements.articlesLoadMore) {
+    dom.elements.articlesLoadMore.addEventListener('click', () => {
+        void loadArticles({ showLoadingRow: false, append: true });
+    });
+
+    if ('IntersectionObserver' in window) {
+        const articlesPaginationObserver = new IntersectionObserver(
+            entries => {
+                if (entries.some(entry => entry.isIntersecting) && isViewActive('main')) {
+                    void loadArticles({ showLoadingRow: false, append: true });
+                }
+            },
+            { rootMargin: '320px 0px' },
+        );
+        articlesPaginationObserver.observe(dom.elements.articlesLoadMore);
+    }
+}
+if (dom.elements.feedBackToTop) {
+    dom.elements.feedBackToTop.addEventListener('click', () => {
+        const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+        articlesScroll?.scrollTo({ top: 0, behavior });
+        window.scrollTo({ top: 0, behavior });
+    });
 }
 const viewerHideButtons = [dom.elements.articleViewerHideBtn, dom.digest.viewerHideBtn];
 const viewerWidthOptions = getViewerWidthOptions();
@@ -3103,18 +3438,26 @@ dom.elements.articlesList.addEventListener('click', async event => {
         return;
     }
 
-    const addButton = event.target.closest('.btn-add[data-article-id]');
-    if (addButton && dom.elements.articlesList.contains(addButton)) {
+    const saveButton = event.target.closest('.article-save-btn[data-article-id]');
+    if (saveButton && dom.elements.articlesList.contains(saveButton)) {
         event.preventDefault();
         event.stopPropagation();
 
-        const articleId = Number(addButton.dataset.articleId);
+        const articleId = Number(saveButton.dataset.articleId);
 
         if (!Number.isInteger(articleId) || articleId <= 0) {
             return;
         }
 
         await openListModal(articleId);
+        return;
+    }
+
+    const dismissButton = event.target.closest('.article-dismiss-btn[data-article-id]');
+    if (dismissButton && dom.elements.articlesList.contains(dismissButton)) {
+        event.preventDefault();
+        event.stopPropagation();
+        await dismissFeedArticle(Number(dismissButton.dataset.articleId));
         return;
     }
 
@@ -3144,8 +3487,21 @@ dom.elements.articlesList.addEventListener('click', async event => {
         }
 
         await openDashboardWithTopicFilter(topicSlug);
+        return;
+    }
+
+    const card = event.target.closest('.feed-card[data-article-id]');
+    if (card && dom.elements.articlesList.contains(card)) {
+        setFocusedFeedArticle(Number(card.dataset.articleId));
     }
 });
+dom.elements.articlesList.addEventListener('focusin', event => {
+    const card = event.target.closest('.feed-card[data-article-id]');
+    if (card) {
+        setFocusedFeedArticle(Number(card.dataset.articleId));
+    }
+});
+
 dom.digest.list.addEventListener('click', async event => {
     const sourceChip = event.target.closest('.digest-source-chip.is-clickable');
     if (sourceChip && dom.digest.list.contains(sourceChip)) {
@@ -3156,6 +3512,20 @@ dom.digest.list.addEventListener('click', async event => {
         const sourceName = sourceChip.dataset.sourceName || '';
 
         await openDashboardWithSourceFilter({ feedId, sourceName });
+        return;
+    }
+
+    const openButton = event.target.closest('.digest-item-open-btn[data-item-url]');
+    if (openButton && dom.digest.list.contains(openButton)) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const articleId = Number(openButton.dataset.articleId);
+        if (Number.isInteger(articleId) && articleId > 0) {
+            openArticleExternal(articleId);
+        } else {
+            window.open(openButton.dataset.itemUrl, '_blank', 'noopener,noreferrer');
+        }
         return;
     }
 
@@ -3201,9 +3571,10 @@ dom.digest.list.addEventListener('click', async event => {
         }
 
         const clusterCard = clusterDigestButton.closest('.digest-cluster');
-        const ok = await markDigestArticlesByIds(articleIds, clusterDigestButton, 'Digest content', {
+        const ok = await markDigestArticlesByIds(articleIds, clusterDigestButton, 'Mark as digested', {
             refresh: false,
             skipNextDigestEvent: true,
+            toastMessage: 'Story marked as digested',
         });
         if (!ok) {
             return;
@@ -3251,10 +3622,12 @@ dom.digest.list.addEventListener('keydown', event => {
 
     openDigestItemCardInViewer(itemCard);
 });
-dom.elements.toggleLayoutBtn.addEventListener('click', () => {
-    isListLayout = !isListLayout;
-    localStorage.setItem(localStorageKeys.layoutKey, isListLayout ? 'list' : 'cards');
-    applyLayoutState();
+dom.elements.layoutOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        isListLayout = option.dataset.layout === 'list';
+        localStorage.setItem(localStorageKeys.layoutKey, isListLayout ? 'list' : 'cards');
+        applyLayoutState();
+    });
 });
 if (dom.elements.themeToggleBtn) {
     dom.elements.themeToggleBtn.addEventListener('click', () => {
@@ -3266,6 +3639,15 @@ if (dom.elements.themeToggleBtn) {
 dom.elements.runFetchBtn.addEventListener('click', async () => {
     await clearDashboardFilters();
 });
+if (dom.elements.activeFilterChips) {
+    dom.elements.activeFilterChips.addEventListener('click', async event => {
+        const chip = event.target.closest('.active-filter-chip[data-filter-key]');
+        if (!chip) {
+            return;
+        }
+        await clearSingleDashboardFilter(chip.dataset.filterKey);
+    });
+}
 if (dom.elements.settingsFetchNowBtn) {
     dom.elements.settingsFetchNowBtn.addEventListener('click', async () => {
         await runManualFetch(dom.elements.settingsFetchNowBtn);
@@ -3353,6 +3735,7 @@ if (dom.digest.settings.blockWordInput) {
 }
 
 dom.elements.searchInput.addEventListener('input', () => {
+    renderActiveFilterChips();
     if (searchTimer) {
         clearTimeout(searchTimer);
         searchTimer = null;
@@ -3393,12 +3776,44 @@ window.addEventListener('keydown', event => {
     if (event.defaultPrevented) {
         return;
     }
-    if (event.key !== 'Escape') {
+    const target = event.target;
+    const isTextEntry =
+        target instanceof HTMLElement &&
+        (target.matches('input, select, textarea') || target.isContentEditable);
+    if (isTextEntry || event.metaKey || event.ctrlKey || event.altKey || isListModalOpen()) {
         return;
     }
-    if (isListModalOpen()) {
-        event.preventDefault();
-        closeListModal();
+
+    if (isViewActive('main')) {
+        const key = String(event.key || '').toLowerCase();
+        if (key === 'j' || key === 'k') {
+            event.preventDefault();
+            moveFeedArticleSelection(key === 'j' ? 1 : -1);
+            return;
+        }
+
+        const cards = getFeedCards();
+        const selectedId =
+            articlesRuntime.focusedArticleId || Number(cards.find(card => card instanceof HTMLElement)?.dataset.articleId);
+        if (Number.isInteger(selectedId) && selectedId > 0) {
+            if (key === 's') {
+                event.preventDefault();
+                void openListModal(selectedId);
+                return;
+            }
+            if (key === 'd') {
+                event.preventDefault();
+                void dismissFeedArticle(selectedId);
+                return;
+            }
+            if (event.key === 'Enter' && !(target instanceof HTMLElement && target.matches('button, a'))) {
+                event.preventDefault();
+                openArticleInViewer(selectedId);
+                return;
+            }
+        }
+    }
+    if (event.key !== 'Escape') {
         return;
     }
     if (!isViewActive('main') && !isViewActive('digest')) {

@@ -72,30 +72,97 @@
   },
   "crypto": {
     "label": "Krypto",
+    "type": "domain",
     "strong": [
       "bitcoin",
       "ethereum",
       "crypto",
+      "cryptocurrency",
       "kryptowährung",
       "blockchain",
-      "wallet",
       "defi"
     ],
     "medium": [
-      "token",
       "smart contract",
       "nft",
       "staking",
-      "layer 2"
+      "layer 2",
+      "on-chain",
+      "wallet"
     ],
     "weak": [
+      "token",
       "coin",
-      "chain",
-      "on-chain"
+      "chain"
     ]
+  },
+  "database": {
+    "label": "🗄️ Databases",
+    "type": "technology",
+    "strong": [
+      "database",
+      "datenbank",
+      "postgresql",
+      "postgres",
+      "mysql",
+      "mongodb",
+      "sqlite",
+      "vector database"
+    ],
+    "medium": [
+      "sql",
+      "redis"
+    ],
+    "weak": []
+  },
+  "development": {
+    "label": "👩‍💻 Software Development",
+    "type": "domain",
+    "strong": [
+      "software development",
+      "softwareentwicklung",
+      "programming",
+      "programmierung",
+      "javascript",
+      "typescript",
+      "python",
+      "rust",
+      "golang"
+    ],
+    "medium": [
+      "developer",
+      "sdk",
+      "api",
+      "framework",
+      "java"
+    ],
+    "weak": [
+      "code"
+    ]
+  },
+  "devops": {
+    "label": "⚙️ DevOps",
+    "type": "domain",
+    "strong": [
+      "devops",
+      "ci/cd",
+      "continuous integration",
+      "continuous deployment",
+      "github actions",
+      "gitlab ci",
+      "infrastructure as code"
+    ],
+    "medium": [
+      "terraform",
+      "ansible",
+      "deployment pipeline"
+    ],
+    "weak": []
   },
   "ecommerce": {
     "label": "E-Commerce",
+    "type": "domain",
+    "minMatches": 2,
     "strong": [
       "e-commerce",
       "onlineshop",
@@ -106,12 +173,12 @@
     ],
     "medium": [
       "conversion rate",
-      "conversion",
       "aov",
-      "retention",
       "merchant"
     ],
     "weak": [
+      "conversion",
+      "retention",
       "shop",
       "bestellung",
       "produktseite"
@@ -169,10 +236,10 @@
   },
   "gaming": {
     "label": "🎮 Gaming",
+    "type": "domain",
     "strong": [
       "gaming",
       "videospiel",
-      "game",
       "steam",
       "playstation",
       "xbox",
@@ -186,6 +253,7 @@
       "game pass"
     ],
     "weak": [
+      "game",
       "spieler",
       "konsole",
       "titel"
@@ -239,6 +307,7 @@
   },
   "ki": {
     "label": "🤖 KI",
+    "type": "technology",
     "strong": [
       "künstliche intelligenz",
       "artificial intelligence",
@@ -261,16 +330,34 @@
       "fine tuning"
     ]
   },
+  "linux": {
+    "label": "🐧 Linux",
+    "type": "technology",
+    "strong": [
+      "linux",
+      "ubuntu",
+      "debian",
+      "fedora",
+      "arch linux",
+      "linux kernel"
+    ],
+    "medium": [
+      "systemd"
+    ],
+    "weak": []
+  },
   "meta": {
     "label": "💊 Meta",
+    "type": "company",
     "strong": [
-      "meta",
+      "meta platforms",
       "facebook",
       "instagram",
       "whatsapp",
       "threads"
     ],
     "medium": [
+      "meta",
       "reels",
       "metaverse",
       "oculus",
@@ -279,25 +366,32 @@
     "weak": [
       "social graph",
       "feed ranking"
+    ],
+    "exclude": [
+      "meta analyse",
+      "meta analysis"
     ]
   },
   "microsoft": {
     "label": "🪟 Microsoft",
+    "type": "company",
     "strong": [
       "microsoft",
+      "microsoft teams",
+      "microsoft azure",
       "windows",
       "azure",
       "github",
-      "copilot",
-      "xbox"
+      "office 365",
+      "onedrive"
     ],
     "medium": [
-      "office 365",
-      "teams",
-      "onedrive",
+      "copilot",
+      "xbox",
       "windows 11"
     ],
     "weak": [
+      "teams",
       "redmond",
       "active directory"
     ]
@@ -355,6 +449,7 @@
   },
   "privacy": {
     "label": "🕵 Datenschutz",
+    "type": "domain",
     "strong": [
       "datenschutz",
       "dsgvo",
@@ -378,19 +473,20 @@
   },
   "regulierung": {
     "label": "🇪🇺 Regulierung",
+    "type": "domain",
     "strong": [
       "eu ai act",
+      "ai act",
       "dsa",
       "dma",
       "dora",
-      "nIS2",
-      "gdpr",
-      "dsgvo"
+      "nis2",
+      "cyber resilience act",
+      "data act"
     ],
     "medium": [
       "regulierung",
-      "compliance",
-      "aufsicht",
+      "aufsichtsbehörde",
       "verordnung",
       "gesetzesentwurf"
     ],
@@ -448,8 +544,30 @@
       "absicherung"
     ]
   },
+  "semiconductor": {
+    "label": "🔬 Semiconductors",
+    "type": "technology",
+    "strong": [
+      "semiconductor",
+      "halbleiter",
+      "nvidia",
+      "amd",
+      "intel",
+      "qualcomm",
+      "tsmc",
+      "chipfertigung"
+    ],
+    "medium": [
+      "arm",
+      "foundry"
+    ],
+    "weak": [
+      "chip"
+    ]
+  },
   "social_media": {
     "label": "🪢 Social Media",
+    "type": "domain",
     "strong": [
       "social media",
       "tiktok",
@@ -462,12 +580,12 @@
     ],
     "medium": [
       "creator economy",
-      "algorithmus",
-      "feed",
       "reels",
       "shorts"
     ],
     "weak": [
+      "algorithmus",
+      "feed",
       "follower",
       "reichweite",
       "viral"
@@ -475,50 +593,67 @@
   },
   "startup": {
     "label": "🚀 Startup",
+    "type": "domain",
     "strong": [
       "startup",
-      "venture capital",
-      "seed-runde",
-      "series a",
-      "cap table",
-      "Wagniskapital"
+      "scaleup",
+      "startup ecosystem"
     ],
     "medium": [
       "founder",
+      "gründer",
       "gründung",
-      "runway",
-      "pitch deck",
-      "business angel"
+      "accelerator",
+      "incubator"
     ],
     "weak": [
-      "investment",
-      "finanzierung"
+      "pitch deck"
     ]
   },
   "vc": {
     "label": "💰 VC",
+    "type": "domain",
     "strong": [
       "venture capital",
-      "vc",
-      "private equity",
-      "seed",
-      "pre-seed",
+      "wagniskapital",
+      "fundraising",
+      "finanzierungsrunde",
       "series a",
       "series b",
-      "term sheet"
+      "term sheet",
+      "vc fund"
     ],
     "medium": [
       "valuation",
-      "cap table",
-      "runway",
-      "burn rate",
-      "fundraising",
       "lead investor"
     ],
     "weak": [
+      "vc",
+      "seed",
+      "pre-seed",
       "finanzierung",
       "investment",
       "investor"
+    ]
+  },
+  "web": {
+    "label": "🌐 Web",
+    "type": "technology",
+    "strong": [
+      "browser",
+      "chromium",
+      "firefox",
+      "webassembly",
+      "wasm",
+      "web platform"
+    ],
+    "medium": [
+      "html",
+      "css",
+      "http"
+    ],
+    "weak": [
+      "web"
     ]
   }
 }

@@ -1,12 +1,9 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
-import {
-    clusterDigestArticles,
-    getDigestRangeIso,
-    mapArticleRow,
-    normalizeDigestVariant,
-} from './digest.js';
+import { queryArticles } from '../services/article-queries.js';
+import { buildDigestPayload } from '../services/digest-payload.js';
+import { normalizeDigestVariant } from './digest.js';
 import { publish } from '../services/events.js';
 import { logInfo } from '../utils/logger.js';
 
@@ -37,49 +34,6 @@ function chunkArray(items, size = 400) {
         chunks.push(items.slice(index, index + size));
     }
     return chunks;
-}
-
-async function loadTopicsByArticleIds(articleIds) {
-    const normalizedArticleIds = normalizeArticleIds(articleIds);
-    const topicsByArticleId = new Map();
-
-    if (normalizedArticleIds.length === 0) {
-        return topicsByArticleId;
-    }
-
-    const articleIdChunks = chunkArray(normalizedArticleIds, 400);
-    for (const chunk of articleIdChunks) {
-        const topicRows = await all(
-            `
-            SELECT
-                article_topics.articleId AS articleId,
-                article_topics.topicSlug AS topicSlug,
-                topics.label AS topicLabel,
-                article_topics.score AS score
-            FROM article_topics
-            JOIN topics ON topics.slug = article_topics.topicSlug
-            WHERE article_topics.articleId IN (SELECT value FROM json_each(?))
-            ORDER BY article_topics.score DESC, article_topics.topicSlug ASC
-            `,
-            [JSON.stringify(chunk)],
-        );
-
-        topicRows.forEach(row => {
-            const articleId = Number(row.articleId);
-            if (!Number.isInteger(articleId) || articleId <= 0) {
-                return;
-            }
-            const existing = topicsByArticleId.get(articleId) || [];
-            existing.push({
-                slug: row.topicSlug,
-                label: row.topicLabel || row.topicSlug,
-                score: Number(row.score || 0),
-            });
-            topicsByArticleId.set(articleId, existing);
-        });
-    }
-
-    return topicsByArticleId;
 }
 
 async function buildArticleListsBulkPayload(articleIds) {
@@ -172,7 +126,7 @@ async function buildArticleListsBulkPayload(articleIds) {
     };
 }
 
-async function markArticlesAsDigestedInTransaction(articleIds) {
+export async function setArticlesDigestedStateInTransaction(articleIds, digested) {
     const ids = normalizeArticleIds(articleIds);
     if (ids.length === 0) {
         return { updated: 0, total: 0 };
@@ -181,11 +135,11 @@ async function markArticlesAsDigestedInTransaction(articleIds) {
     await run('BEGIN IMMEDIATE');
     let updated = 0;
     try {
-        const chunks = chunkArray(ids, 400);
-        for (const chunk of chunks) {
-            const result = await run('UPDATE articles SET dailyDigested = 1 WHERE id IN (SELECT value FROM json_each(?))', [
-                JSON.stringify(chunk),
-            ]);
+        for (const chunk of chunkArray(ids, 400)) {
+            const result = await run(
+                'UPDATE articles SET dailyDigested = ? WHERE id IN (SELECT value FROM json_each(?))',
+                [digested ? 1 : 0, JSON.stringify(chunk)],
+            );
             updated += Number(result?.changes || 0);
         }
         await run('COMMIT');
@@ -193,7 +147,7 @@ async function markArticlesAsDigestedInTransaction(articleIds) {
         try {
             await run('ROLLBACK');
         } catch {
-            // ignore rollback error to preserve original failure
+            // Preserve the original transaction error.
         }
         throw err;
     }
@@ -201,77 +155,22 @@ async function markArticlesAsDigestedInTransaction(articleIds) {
     return { updated, total: ids.length };
 }
 
-async function buildDigestPayload(variant = 'day') {
-    const normalizedVariant = normalizeDigestVariant(variant);
-    const { startIso, endIso } = getDigestRangeIso(normalizedVariant);
-    const rows = await all(
-        `
-        SELECT
-            articles.*,
-            feeds.name as sourceName,
-            feeds.logo as sourceLogo,
-            feeds.logoMime as sourceLogoMime
-        FROM articles
-        JOIN feeds ON feeds.id = articles.feedId
-        WHERE articles.publishedAt IS NOT NULL
-          AND articles.dailyDigested = 0
-          AND articles.publishedAt >= ?
-          AND articles.publishedAt < ?
-          AND NOT EXISTS (
-              SELECT 1
-              FROM digest_excluded_feeds
-              WHERE digest_excluded_feeds.feedId = articles.feedId
-          )
-          AND NOT EXISTS (
-              SELECT 1
-              FROM digest_blocked_words
-              WHERE length(trim(digest_blocked_words.word)) > 0
-                AND instr(
-                    lower(coalesce(articles.title, '') || ' ' || coalesce(articles.teaser, '')),
-                    lower(trim(digest_blocked_words.word))
-                ) > 0
-          )
-        ORDER BY articles.publishedAt DESC, articles.id DESC
-        `,
-        [startIso, endIso],
-    );
+export async function setArticleDismissedState(articleId, dismissed) {
+    const existing = await get('SELECT id FROM articles WHERE id = ?', [articleId]);
+    if (!existing) {
+        return false;
+    }
 
-    const mapped = rows.map(mapArticleRow);
-    const articleIds = mapped
-        .map(article => Number(article.id))
-        .filter(articleId => Number.isInteger(articleId) && articleId > 0);
-    const topicsByArticleId = await loadTopicsByArticleIds(articleIds);
-    const withTopics = mapped.map(article => ({
-        ...article,
-        topics: topicsByArticleId.get(Number(article.id)) || [],
-    }));
-    const clusters = clusterDigestArticles(withTopics);
-    const visibleClusters =
-        normalizedVariant === 'month'
-            ? clusters.filter(cluster => {
-                  const itemCount = Array.isArray(cluster?.items) ? cluster.items.length : 0;
-                  const clusterCount = Number(cluster?.clusterCount || 0);
-                  return Math.max(itemCount, clusterCount) > 1;
-              })
-            : clusters;
-    const totalArticles = visibleClusters.reduce((sum, cluster) => {
-        const items = Array.isArray(cluster?.items) ? cluster.items : [];
-        return sum + items.length;
-    }, 0);
-
-    return {
-        variant: normalizedVariant,
-        startIso,
-        endIso,
-        totalArticles,
-        totalClusters: visibleClusters.length,
-        clusters: visibleClusters,
-    };
+    await run("UPDATE articles SET dismissedAt = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ?", [
+        dismissed ? 1 : 0,
+        articleId,
+    ]);
+    return true;
 }
 
 async function handleDigestRequest(req, res) {
     const variant = normalizeDigestVariant(req.query?.variant || req.query?.range || 'day');
-    const payload = await buildDigestPayload(variant);
+    const payload = await buildDigestPayload(variant, { all });
     return res.json(payload);
 }
 
@@ -304,7 +203,7 @@ async function handleMarkArticleDigested(req, res) {
 
 async function handleMarkAllDigested(req, res) {
     const articleIds = normalizeArticleIds(req.body?.articleIds);
-    const result = await markArticlesAsDigestedInTransaction(articleIds);
+    const result = await setArticlesDigestedStateInTransaction(articleIds, true);
     publish('articles.updated', {
         source: 'digest',
         batch: true,
@@ -315,73 +214,72 @@ async function handleMarkAllDigested(req, res) {
     return res.json({ ok: true, ...result });
 }
 
+async function handleRestoreDigested(req, res) {
+    const articleIds = normalizeArticleIds(req.body?.articleIds);
+    const result = await setArticlesDigestedStateInTransaction(articleIds, false);
+    publish('articles.updated', {
+        source: 'digest',
+        batch: true,
+        restored: true,
+        updated: result.updated,
+        total: result.total,
+    });
+
+    return res.json({ ok: true, ...result });
+}
+
+async function handleSetDismissed(req, res) {
+    const articleId = Number(req.params?.id);
+    if (!Number.isInteger(articleId) || articleId <= 0) {
+        return res.status(400).json({ error: 'Invalid article id' });
+    }
+
+    const dismissed = req.body?.dismissed !== false;
+    const updated = await setArticleDismissedState(articleId, dismissed);
+    if (!updated) {
+        return res.status(404).json({ error: 'Article not found' });
+    }
+    publish('articles.updated', { source: 'feed', articleId, dismissed });
+
+    return res.json({ ok: true, id: articleId, dismissed });
+}
+
 router.get('/stats', auth, async (_req, res) => {
-    const row = await get('SELECT COUNT(*) AS total FROM articles');
-    return res.json({ total: Number(row?.total || 0) });
+    const row = await get(
+        `SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN dismissedAt IS NULL THEN 1 ELSE 0 END) AS unread,
+            SUM(CASE WHEN dismissedAt IS NOT NULL THEN 1 ELSE 0 END) AS dismissed
+         FROM articles`,
+    );
+    return res.json({
+        total: Number(row?.total || 0),
+        unread: Number(row?.unread || 0),
+        dismissed: Number(row?.dismissed || 0),
+    });
 });
 
 router.get('/digest', auth, handleDigestRequest);
 router.get('/daily-digest', auth, async (_req, res) => {
-    const payload = await buildDigestPayload('day');
+    const payload = await buildDigestPayload('day', { all });
     return res.json(payload);
 });
 router.patch('/:id/digested', auth, handleMarkArticleDigested);
 router.patch('/:id/daily-digested', auth, handleMarkArticleDigested);
 router.post('/digest/mark-all-digested', auth, handleMarkAllDigested);
 router.post('/daily-digest/mark-all-digested', auth, handleMarkAllDigested);
+router.post('/digest/restore', auth, handleRestoreDigested);
+router.patch('/:id/dismissed', auth, handleSetDismissed);
 
-router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, limit = 100 } }, res) => {
-    const params = [];
-    const whereParts = [];
-    const like = `%${query}%`;
-
-    if (feedId) {
-        whereParts.push('feeds.id = ?');
-        params.push(feedId);
-    } else if (source) {
-        whereParts.push('feeds.name = ?');
-        params.push(source);
-    }
-    if (listId) {
-        whereParts.push('list_items.listId = ?');
-        params.push(listId);
-    }
-    if (topic) {
-        whereParts.push('EXISTS (SELECT 1 FROM article_topics WHERE article_topics.articleId = articles.id AND article_topics.topicSlug = ?)');
-        params.push(String(topic).trim().toLowerCase());
-    }
+router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, limit = 100, offset = 0 } }, res) => {
     if (query) {
         logInfo('Search query', { query });
-        whereParts.push('(articles.title LIKE ? OR articles.teaser LIKE ? OR feeds.name LIKE ?)');
-        params.push(like, like, like);
     }
-
-    const sql = [
-        'SELECT articles.*, feeds.name as sourceName, feeds.logo as sourceLogo, feeds.logoMime as sourceLogoMime',
-        'FROM articles',
-        'JOIN feeds ON feeds.id = articles.feedId',
-        'LEFT JOIN list_items ON list_items.articleId = articles.id',
-        whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '',
-        'ORDER BY articles.publishedAt DESC, articles.id DESC',
-        'LIMIT ?',
-    ]
-        .filter(Boolean)
-        .join('\n');
-    params.push(Number(limit) || 100);
-
-    const rows = await all(sql, params);
-    const mapped = rows.map(mapArticleRow);
-    const articleIds = mapped
-        .map(article => Number(article.id))
-        .filter(articleId => Number.isInteger(articleId) && articleId > 0);
-    const topicsByArticleId = await loadTopicsByArticleIds(articleIds);
-
-    const withTopics = mapped.map(article => ({
-        ...article,
-        topics: topicsByArticleId.get(Number(article.id)) || [],
-    }));
-
-    return res.json(withTopics);
+    const articles = await queryArticles(
+        { feedId, source, listId, topic, query, limit, offset, activeOnly: true, includeTopics: true, maxLimit: 250 },
+        { all },
+    );
+    return res.json(articles);
 });
 
 router.post('/lists/bulk', auth, async ({ body }, res) => {

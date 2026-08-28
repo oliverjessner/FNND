@@ -6,6 +6,7 @@
         <title>NO BULL💩 RSS</title>
         <link rel="icon" href="/images/logo/logo_small.png" />
         <link rel="stylesheet" href="/styles.css" />
+        <link rel="stylesheet" href="/triage-final.css" />
     </head>
     <body>
         <header class="topbar">
@@ -14,9 +15,8 @@
             </div>
 
             <nav class="nav">
+                <button class="nav-link is-active" data-view="main">Feed</button>
                 <button class="nav-link" data-view="digest">Digest</button>
-
-                <button class="nav-link is-active" data-view="main">Dashboard</button>
                 <button class="nav-link" data-view="settings">Settings</button>
             </nav>
         </header>
@@ -24,25 +24,32 @@
         <main class="container">
             <section id="view-main" class="view is-active">
                 <div class="toolbar">
+                    <div class="feed-heading">
+                        <div>
+                            <p class="eyebrow">News inbox</p>
+                            <h1>Feed</h1>
+                        </div>
+                        <p id="feed-count" class="feed-count" aria-live="polite">Loading…</p>
+                    </div>
                     <div class="toolbar-actions">
-                        <button id="toggle-layout" class="btn toggle" data-layout="cards" aria-pressed="false">
-                            <span class="toggle-track"></span>
-                            <span class="toggle-label">Cards</span>
-                        </button>
-
-                        <input id="search-input" class="search-input" type="search" placeholder="Search…" />
-
-                        <select id="filter-list" class="select" aria-label="Filter by list">
-                            <option value="">all lists</option>
+                        <input id="search-input" class="search-input" type="search" placeholder="Search articles…" />
+                        <select id="filter-topic" class="select" aria-label="Filter by topic">
+                            <option value="">Topic: All</option>
                         </select>
                         <select id="filter-source" class="select" aria-label="Filter by source">
-                            <option value="">all sources</option>
+                            <option value="">Source: All</option>
                         </select>
-                        <select id="filter-topic" class="select" aria-label="Filter by topic">
-                            <option value="">all topics</option>
+                        <select id="filter-list" class="select" aria-label="Filter by list">
+                            <option value="">List: All</option>
                         </select>
-
-                        <button id="run-fetch" class="btn danger" type="button">clear</button>
+                        <div id="toggle-layout" class="view-toggle" role="group" aria-label="Feed layout">
+                            <button class="view-toggle-option" data-layout="list" type="button" aria-pressed="false">Compact</button>
+                            <button class="view-toggle-option is-active" data-layout="cards" type="button" aria-pressed="true">Cards</button>
+                        </div>
+                    </div>
+                    <div id="active-filter-row" class="active-filter-row hide">
+                        <div id="active-filter-chips" class="active-filter-chips" aria-label="Active filters"></div>
+                        <button id="run-fetch" class="clear-filters" type="button">Clear filters</button>
                     </div>
                 </div>
                 <div id="dashboard-layout" class="dashboard-layout">
@@ -53,6 +60,9 @@
                         <div class="articles-scroll">
                             <h2 id="articles-state" class="state">Loading…</h2>
                             <div id="articles-list" class="cards"></div>
+                            <button id="articles-load-more" class="articles-load-more hide" type="button">
+                                Load more
+                            </button>
                         </div>
                     </div>
                     <aside id="article-viewer" class="article-viewer hide" aria-live="polite">
@@ -112,7 +122,7 @@
                                 type="button"
                                 aria-pressed="true"
                             >
-                                day
+                                Day
                             </button>
                             <button
                                 class="digest-sort-option digest-control-option digest-range-option"
@@ -120,7 +130,7 @@
                                 type="button"
                                 aria-pressed="false"
                             >
-                                week
+                                Week
                             </button>
                             <button
                                 class="digest-sort-option digest-control-option digest-range-option"
@@ -128,12 +138,11 @@
                                 type="button"
                                 aria-pressed="false"
                             >
-                                month
+                                Month
                             </button>
                         </div>
                         <p id="digest-subtitle" class="digest-subtitle">Loading…</p>
                         <div class="digest-header-meta">
-                            <button id="digest-mark-all" class="btn ghost" type="button">Mark all as digested</button>
                             <div
                                 id="digest-sort-toggle"
                                 class="digest-sort-toggle"
@@ -146,7 +155,7 @@
                                     type="button"
                                     aria-pressed="true"
                                 >
-                                    Descending
+                                    Newest
                                 </button>
                                 <button
                                     class="digest-sort-option digest-control-option"
@@ -154,9 +163,15 @@
                                     type="button"
                                     aria-pressed="false"
                                 >
-                                    Ascending
+                                    Oldest
                                 </button>
                             </div>
+                            <details id="digest-bulk-menu" class="bulk-actions-menu">
+                                <summary class="digest-control-option bulk-actions-trigger" aria-label="Digest bulk actions">•••</summary>
+                                <div class="bulk-actions-popover">
+                                    <button id="digest-mark-all" type="button">Mark visible as digested</button>
+                                </div>
+                            </details>
                         </div>
                     </div>
 
@@ -426,28 +441,30 @@
         </main>
 
         <template id="article-card-template">
-            <article class="card">
+            <article class="card feed-card" tabindex="0">
                 <div class="meta">
-                    <span class="meta-date"></span>
                     <button class="meta-source digest-source-chip" type="button">
                         <img class="source-logo digest-source-logo" alt="" />
                         <span class="source-name digest-source-name"></span>
                     </button>
+                    <span class="meta-separator" aria-hidden="true">·</span>
+                    <time class="meta-date"></time>
                 </div>
                 <div class="content">
-                    <h3 class="title"></h3>
+                    <h3 class="title"><button class="article-title-button btn-read" type="button"></button></h3>
                     <p class="teaser"></p>
                 </div>
                 <div class="actions">
-                    <button class="link btn-read" type="button">read article</button>
+                    <button class="btn article-save-btn" type="button">Save</button>
+                    <button class="btn ghost article-dismiss-btn" type="button">Dismiss</button>
                     <button
                         class="btn ghost btn-icon article-action-btn btn-open-external"
                         type="button"
                         title="Open external"
+                        aria-label="Open article externally"
                     >
                         ↗
                     </button>
-                    <button class="btn ghost btn-add article-action-btn" type="button">+</button>
                 </div>
             </article>
         </template>
@@ -520,6 +537,11 @@
                 <div class="digest-items-grid"></div>
             </article>
         </template>
+
+        <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+        <button id="feed-back-to-top" class="feed-back-to-top hide" type="button" aria-label="Back to top" title="Back to top">
+            ↑
+        </button>
 
         <script defer src="/app.js" type="module"></script>
     </body>

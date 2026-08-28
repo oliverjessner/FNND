@@ -27,6 +27,12 @@ also check out the [Landing page](https://oliverjessner.at/no-bullshit-rss/#prom
 npm run electron
 ```
 
+## CLI
+
+The CLI only reads data already stored by NO BULLSHIT RSS. It does not fetch or configure RSS feeds.
+
+See the [CLI documentation](docs/cli.md) for setup, commands, output formats, and database discovery.
+
 ## build for electron (mac, win, linux)
 
 ```bash

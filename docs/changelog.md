@@ -1,3 +1,9 @@
+## 1.0.0
+
+- UX overhaul
+- CLI
+- Topic improvement
+
 ## 0.5.1
 
 - fixed vibe coding problems with https://github.com/oliverjessner/ItWorksBut
