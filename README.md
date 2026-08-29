@@ -2,11 +2,11 @@
 
 I vibe coded some electron slop.
 
-![overview of the app](/public/images/mockups/dashboard.webp)
+![NO BULLSHIT RSS compact feed](public/images/mockups/feed_compact_1920.webp)
 
 No-Bullshit RSS is a minimal, open-source RSS reader that focuses on reading—not dashboards, upsells, or noise. It’s free, has no payments, and stores your feeds in a self-hosted database so you stay in control of your data.
 
-highlights
+## Highlights
 
 - Self-hosted DB: your articles are stored in your own database
 - Open source and no payment / no subscription / no ads
@@ -17,7 +17,29 @@ highlights
 - Dark mode
 - Storage visibility: settings now show how many articles are in your database
 
-![overview of the app](/public/images/mockups/digest.webp)
+## Digest
+
+Related articles from multiple sources are clustered into daily, weekly, and monthly stories.
+
+![NO BULLSHIT RSS monthly digest](public/images/mockups/digest_month_1920.webp)
+
+## Settings
+
+<details>
+<summary>RSS feed management</summary>
+<br>
+
+![NO BULLSHIT RSS feed settings](public/images/mockups/settings_rss_feeds_1920.webp)
+
+</details>
+
+<details>
+<summary>Local topic rules</summary>
+<br>
+
+![NO BULLSHIT RSS topic settings](public/images/mockups/settings_topics_1920.webp)
+
+</details>
 
 also check out the [Landing page](https://oliverjessner.at/no-bullshit-rss/#promise).
 
