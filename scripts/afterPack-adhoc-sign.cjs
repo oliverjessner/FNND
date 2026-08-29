@@ -23,6 +23,19 @@ exports.default = async function afterPack(context) {
   }
 
   for (const appPath of appBundles) {
+    const cliLauncherPath = path.join(
+      appPath,
+      "Contents",
+      "Resources",
+      "bin",
+      "no-bullshit-rss",
+    );
+    if (!fs.existsSync(cliLauncherPath)) {
+      throw new Error(`[adhoc-sign] CLI launcher missing at ${cliLauncherPath}`);
+    }
+    fs.chmodSync(cliLauncherPath, 0o755);
+    console.log(`[adhoc-sign] bundled CLI launcher ${cliLauncherPath}`);
+
     console.log(`[adhoc-sign] codesign -s - ${appPath}`);
     signApp(appPath);
   }

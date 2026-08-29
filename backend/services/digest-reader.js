@@ -3,12 +3,17 @@ import { getDigestPeriodDefinition, getDigestTimezone } from './digest-periods.j
 
 async function loadActiveClusters(period, database) {
     if (!period?.activeGenerationId) return [];
+    const sourceNameExpression = database.feedNamesAvailable === false
+        ? 'sources.name'
+        : "COALESCE(NULLIF(feeds.name, ''), sources.name)";
     const rows = await database.all(
         `SELECT digest_clusters.id AS clusterId, digest_clusters.clusterKey, digest_clusters.title AS clusterTitle,
                 digest_clusters.articleCount AS clusterCount, digest_clusters.displayPosition,
                 digest_cluster_articles.position, digest_cluster_articles.isRepresentative,
                 articles.id, articles.feedId, articles.title, articles.teaser, articles.url, articles.publishedAt,
-                articles.externalId AS guidOrHash, sources.name AS sourceName, sources.logo IS NOT NULL AS hasSourceLogo,
+                articles.externalId AS guidOrHash,
+                ${sourceNameExpression} AS sourceName,
+                sources.logo IS NOT NULL AS hasSourceLogo,
                 digest_cluster_state.readAt, digest_cluster_state.dismissedAt, digest_cluster_state.completedAt
          FROM digest_clusters
          JOIN digest_cluster_articles ON digest_cluster_articles.digestClusterId = digest_clusters.id

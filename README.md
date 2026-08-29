@@ -53,6 +53,8 @@ npm run electron
 
 The CLI only reads data already stored by NO BULLSHIT RSS. It does not fetch or configure RSS feeds.
 
+The macOS DMG includes a self-contained CLI launcher. After installing the app, link it once to make `no-bullshit-rss` available in the terminal; no separate Node.js installation is required.
+
 See the [CLI documentation](docs/cli.md) for setup, commands, output formats, and database discovery.
 
 ## build for electron (mac, win, linux)

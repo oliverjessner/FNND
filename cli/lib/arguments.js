@@ -1,14 +1,22 @@
 const HELP_TEXT = `NO BULLSHIT RSS CLI
 
 Usage:
+  no-bullshit-rss rss [--rss-url]
+  no-bullshit-rss topics
+  no-bullshit-rss lists [--list <name>]
   no-bullshit-rss articles last <count> [--choose] [--url] [--title|--titles]
   no-bullshit-rss articles digest <count> [--daily|--weekly|--monthly]
 
 Commands:
+  rss                        Show all stored RSS feeds
+  topics                     Show all stored topics
+  lists                      Show all stored lists
+  lists --list <name>        Show all articles in a named list
   articles last <count>      Show the newest stored articles
   articles digest <count>    Show the newest digest clusters as JSON
 
 Options:
+  --rss-url                  Print one RSS feed URL per line
   --url                      Print one URL per line
   --title, --titles          Print one title per line
   --choose                   Interactively choose one of the newest articles
@@ -21,6 +29,11 @@ When --url and --title are combined, each line is URL<TAB>TITLE.
 Without a projection flag, "articles last" prints JSON.
 
 Examples:
+  no-bullshit-rss rss
+  no-bullshit-rss rss --rss-url
+  no-bullshit-rss topics
+  no-bullshit-rss lists
+  no-bullshit-rss lists --list "nvidia"
   no-bullshit-rss articles last 10 --url
   no-bullshit-rss articles last 10 --title
   no-bullshit-rss articles last 10 --url --title
@@ -59,6 +72,28 @@ export function parseCliArgs(argv) {
     }
 
     const [resource, action, countValue, ...flags] = args;
+    if (resource === 'rss') {
+        const rssFlags = args.slice(1);
+        rejectUnknownFlags(rssFlags, new Set(['--rss-url']));
+        return {
+            command: 'rss',
+            rssUrl: rssFlags.includes('--rss-url'),
+        };
+    }
+    if (resource === 'topics') {
+        rejectUnknownFlags(args.slice(1), new Set());
+        return { command: 'topics' };
+    }
+    if (resource === 'lists') {
+        const listFlags = args.slice(1);
+        if (listFlags.length === 0) return { command: 'lists', listName: null };
+        if (listFlags[0] !== '--list') throw new Error(`Unknown option: ${listFlags[0]}`);
+        if (!listFlags[1] || !listFlags[1].trim() || listFlags[1].startsWith('--')) {
+            throw new Error('Missing required list name after --list.');
+        }
+        if (listFlags.length > 2) throw new Error(`Unknown option: ${listFlags[2]}`);
+        return { command: 'lists', listName: listFlags[1].trim() };
+    }
     if (resource !== 'articles') {
         throw new Error(`Unknown resource: ${resource || '(missing)'}`);
     }

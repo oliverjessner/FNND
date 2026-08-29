@@ -85,16 +85,19 @@ export async function queryArticles(
         cursorPublishedAt,
         cursorId,
     } = {},
-    { all },
+    { all, feedNamesAvailable = true },
 ) {
     const params = [];
     const whereParts = [];
+    const sourceNameExpression = feedNamesAvailable
+        ? "COALESCE(NULLIF(feeds.name, ''), sources.name)"
+        : 'sources.name';
 
     if (feedId) {
         whereParts.push('feeds.id = ?');
         params.push(feedId);
     } else if (source) {
-        whereParts.push('sources.name = ?');
+        whereParts.push(`${sourceNameExpression} = ?`);
         params.push(source);
     }
     if (listId) {
@@ -135,7 +138,8 @@ export async function queryArticles(
     const sql = [
         `SELECT articles.id, articles.feedId, articles.title, articles.teaser, articles.url,
          articles.publishedAt, articles.createdAt, articles.updatedAt, article_state.dismissedAt,
-         sources.name as sourceName, sources.logo IS NOT NULL AS hasSourceLogo,
+         ${sourceNameExpression} AS sourceName,
+         sources.logo IS NOT NULL AS hasSourceLogo,
          EXISTS (SELECT 1 FROM list_items WHERE list_items.articleId = articles.id) AS saved`,
         'FROM articles',
         'JOIN feeds ON feeds.id = articles.feedId',

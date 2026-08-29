@@ -2,6 +2,21 @@
 
 The `no-bullshit-rss` CLI reads data already stored by NO BULLSHIT RSS. It does not fetch or configure RSS feeds, start Express, run migrations, or write to the database. SQLite is opened in read-only mode.
 
+## DMG installation
+
+The macOS DMG includes the CLI and its runtime inside the app bundle. After dragging `NO BULLSHIT RSS.app` to Applications, link the bundled launcher once:
+
+```bash
+sudo mkdir -p /usr/local/bin
+sudo ln -sfn "/Applications/NO BULLSHIT RSS.app/Contents/Resources/bin/no-bullshit-rss" /usr/local/bin/no-bullshit-rss
+```
+
+The command is then available in a new terminal without installing Node.js or running `npm link`:
+
+```bash
+no-bullshit-rss --help
+```
+
 ## Development setup
 
 Run the CLI directly from the repository or create a local npm link:
@@ -51,6 +66,40 @@ no-bullshit-rss articles last 10 --choose --url --title
 The selector is rendered on stderr and only the selected result is written to stdout. `Esc`, `q`, or `Ctrl+C` cancels the selection. Without `--url` or `--title`, the selected article is returned as one compact JSON object.
 
 Articles are ordered by `publishedAt DESC, id DESC`.
+
+## Stored RSS feeds
+
+Return all stored feeds with their names, feed URLs, and website URLs as JSON:
+
+```bash
+no-bullshit-rss rss
+```
+
+Print only the RSS feed URLs, one per line:
+
+```bash
+no-bullshit-rss rss --rss-url
+```
+
+## Topics and lists
+
+Return all stored topic definitions:
+
+```bash
+no-bullshit-rss topics
+```
+
+Return all lists, including the number of stored articles in each list:
+
+```bash
+no-bullshit-rss lists
+```
+
+Return all articles from a list. List-name matching is case-insensitive:
+
+```bash
+no-bullshit-rss lists --list "nvidia"
+```
 
 ## Digests
 

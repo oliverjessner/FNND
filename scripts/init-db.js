@@ -35,9 +35,9 @@ async function seedFeeds() {
         const [sourceRow] = await all('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', [canonicalWebsiteUrl]);
         for (const feedUrl of source.feeds) {
             await run(
-                `INSERT INTO feeds (sourceId, feedUrl, createdAt, updatedAt)
-                 VALUES (?, ?, datetime('now'), datetime('now')) ON CONFLICT(feedUrl) DO NOTHING`,
-                [sourceRow.id, feedUrl],
+                `INSERT INTO feeds (sourceId, name, feedUrl, createdAt, updatedAt)
+                 VALUES (?, ?, ?, datetime('now'), datetime('now')) ON CONFLICT(feedUrl) DO NOTHING`,
+                [sourceRow.id, source.name, feedUrl],
             );
         }
     }

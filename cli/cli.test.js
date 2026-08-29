@@ -8,7 +8,7 @@ import sqlite3 from '@vscode/sqlite3';
 import { parseCliArgs } from './lib/arguments.js';
 import { chooseArticle } from './lib/choose.js';
 import { discoverDatabasePath, getElectronDatabasePath } from './lib/database-path.js';
-import { formatChosenArticle, formatDigest, formatLastArticles } from './lib/output.js';
+import { formatChosenArticle, formatDigest, formatFeeds, formatLastArticles } from './lib/output.js';
 import { runCli } from './main.js';
 import { getDigestPeriodDefinition } from '../backend/services/digest-periods.js';
 
@@ -24,7 +24,7 @@ function createCaptureStream() {
     };
 }
 
-async function createFixtureDatabase(databasePath) {
+async function createFixtureDatabase(databasePath, { includeFeedNames = true } = {}) {
     const database = await new Promise((resolve, reject) => {
         const connection = new sqlite3.Database(databasePath, error => {
             if (error) reject(error);
@@ -41,6 +41,9 @@ async function createFixtureDatabase(databasePath) {
         });
 
     await exec(await readFile(new URL('../migrations-v2/0001_schema.sql', import.meta.url), 'utf8'));
+    if (includeFeedNames) {
+        await exec(await readFile(new URL('../migrations-v2/0002_feed_names.sql', import.meta.url), 'utf8'));
+    }
 
     const now = new Date();
     const newestTimestamp = new Date(now.getTime() - 60_000).toISOString();
@@ -62,6 +65,13 @@ async function createFixtureDatabase(databasePath) {
             (1, NULL, datetime('now'), datetime('now')),
             (2, NULL, datetime('now'), datetime('now')),
             (3, datetime('now'), datetime('now'), datetime('now'));
+        INSERT INTO topics (id, slug, label, configJson, ruleHash, ruleVersion, createdAt, updatedAt)
+        VALUES (1, 'nvidia', 'Nvidia', '{"type":null,"minMatches":1,"exclude":[],"strong":["nvidia"],"medium":[],"weak":[]}', 'topic-hash', 2, datetime('now'), datetime('now'));
+        INSERT INTO lists (id, name, description, color, createdAt, updatedAt)
+        VALUES (1, 'Nvidia', 'GPU news', '#76b900', datetime('now'), datetime('now'));
+        INSERT INTO list_items (listId, articleId, createdAt) VALUES
+            (1, 1, datetime('now')),
+            (1, 2, datetime('now'));
         INSERT INTO digest_periods
             (id, type, periodKey, startsAt, endsAt, timezone, status, activeGenerationId, generatedAt,
              algorithmVersion, rulesVersion, createdAt, updatedAt)
@@ -83,6 +93,11 @@ async function createFixtureDatabase(databasePath) {
 }
 
 test('parses article projections and digest ranges', () => {
+    assert.deepEqual(parseCliArgs(['rss']), { command: 'rss', rssUrl: false });
+    assert.deepEqual(parseCliArgs(['rss', '--rss-url']), { command: 'rss', rssUrl: true });
+    assert.deepEqual(parseCliArgs(['topics']), { command: 'topics' });
+    assert.deepEqual(parseCliArgs(['lists']), { command: 'lists', listName: null });
+    assert.deepEqual(parseCliArgs(['lists', '--list', ' nvidia ']), { command: 'lists', listName: 'nvidia' });
     assert.deepEqual(parseCliArgs(['articles', 'last', '10', '--url']), {
         command: 'articles-last',
         count: 10,
@@ -135,6 +150,11 @@ test('rejects invalid counts, flags and multiple digest ranges', () => {
     assert.throws(() => parseCliArgs(['articles', 'last', '1.5']), /greater than 0/u);
     assert.throws(() => parseCliArgs(['articles', 'last', '2', '--weekly']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['articles', 'digest', '2', '--choose']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['rss', '--url']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['topics', '--list']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['lists', '--list']), /Missing required list name/u);
+    assert.throws(() => parseCliArgs(['lists', '--list', '--url']), /Missing required list name/u);
+    assert.throws(() => parseCliArgs(['lists', '--unknown']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['unknown', 'last', '2']), /Unknown resource/u);
     assert.throws(() => parseCliArgs(['articles', 'unknown', '2']), /Unknown articles command/u);
     assert.throws(
@@ -225,6 +245,12 @@ test('formats URL, title, combined and compact JSON output', () => {
             },
         ],
     );
+    const feeds = [
+        { name: 'Example Tech', feedUrl: 'https://example.com/tech.xml', websiteUrl: 'https://example.com/tech' },
+        { name: 'Example Startups', feedUrl: 'https://example.com/startups.xml', websiteUrl: 'https://example.com/startups' },
+    ];
+    assert.deepEqual(JSON.parse(formatFeeds(feeds)), feeds);
+    assert.equal(formatFeeds(feeds, { rssUrl: true }), 'https://example.com/tech.xml\nhttps://example.com/startups.xml');
 });
 
 test('chooses an article with keyboard navigation and restores terminal state', async () => {
@@ -335,6 +361,77 @@ test('runs article and digest commands against only a temporary DB without write
     assert.equal(clusters.length, 1);
     assert.equal(clusters[0].articles[0].title, 'Same time lower id');
 
+    const feedsStdout = createCaptureStream();
+    const feedsStderr = createCaptureStream();
+    const feedsExitCode = await runCli(['rss'], {
+        stdout: feedsStdout,
+        stderr: feedsStderr,
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(feedsExitCode, 0);
+    assert.equal(feedsStderr.read(), '');
+    assert.deepEqual(JSON.parse(feedsStdout.read()), [
+        { name: 'Test Source', feedUrl: 'https://example.com/feed', websiteUrl: 'https://example.com' },
+    ]);
+
+    const feedUrlsStdout = createCaptureStream();
+    const feedUrlsExitCode = await runCli(['rss', '--rss-url'], {
+        stdout: feedUrlsStdout,
+        stderr: createCaptureStream(),
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(feedUrlsExitCode, 0);
+    assert.equal(feedUrlsStdout.read(), 'https://example.com/feed\n');
+
+    const topicsStdout = createCaptureStream();
+    const topicsExitCode = await runCli(['topics'], {
+        stdout: topicsStdout,
+        stderr: createCaptureStream(),
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(topicsExitCode, 0);
+    assert.deepEqual(JSON.parse(topicsStdout.read()), [
+        {
+            id: 1,
+            slug: 'nvidia',
+            label: 'Nvidia',
+            type: null,
+            minMatches: 1,
+            exclude: [],
+            strong: ['nvidia'],
+            medium: [],
+            weak: [],
+            ruleVersion: 2,
+        },
+    ]);
+
+    const listsStdout = createCaptureStream();
+    const listsExitCode = await runCli(['lists'], {
+        stdout: listsStdout,
+        stderr: createCaptureStream(),
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(listsExitCode, 0);
+    assert.deepEqual(JSON.parse(listsStdout.read()), [
+        { id: 1, name: 'Nvidia', description: 'GPU news', color: '#76b900', articleCount: 2 },
+    ]);
+
+    const listArticlesStdout = createCaptureStream();
+    const listArticlesStderr = createCaptureStream();
+    const listArticlesExitCode = await runCli(['lists', '--list', 'nViDiA'], {
+        stdout: listArticlesStdout,
+        stderr: listArticlesStderr,
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(listArticlesExitCode, 0);
+    assert.equal(listArticlesStderr.read(), '');
+    assert.deepEqual(JSON.parse(listArticlesStdout.read()).map(article => article.id), [2, 1]);
+
     const verification = await createFixtureReader(databasePath);
     const persisted = await verification.all(
         'SELECT articles.id, article_state.dismissedAt FROM articles JOIN article_state ON article_state.articleId = articles.id ORDER BY articles.id',
@@ -347,6 +444,44 @@ test('runs article and digest commands against only a temporary DB without write
             [3, true],
         ],
     );
+    await verification.close();
+});
+
+test('reads digest data from a pre-feed-name database without migrating it', async t => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'no-bullshit-rss-cli-legacy-feed-name-'));
+    const databasePath = path.join(directory, 'fixture.db');
+    const fixture = await createFixtureDatabase(databasePath, { includeFeedNames: false });
+    await fixture.close();
+    t.after(() => rm(directory, { recursive: true, force: true }));
+
+    const stdout = createCaptureStream();
+    const stderr = createCaptureStream();
+    const exitCode = await runCli(['articles', 'digest', '10', '--daily'], {
+        stdout,
+        stderr,
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(stderr.read(), '');
+    assert.equal(JSON.parse(stdout.read())[0].articles[0].sourceName, 'Test Source');
+
+    const listStdout = createCaptureStream();
+    const listStderr = createCaptureStream();
+    const listExitCode = await runCli(['lists', '--list', 'nvidia'], {
+        stdout: listStdout,
+        stderr: listStderr,
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(listExitCode, 0);
+    assert.equal(listStderr.read(), '');
+    assert.equal(JSON.parse(listStdout.read())[0].sourceName, 'Test Source');
+
+    const verification = await createFixtureReader(databasePath);
+    const columns = await verification.all('PRAGMA table_info(feeds)');
+    assert.equal(columns.some(column => column.name === 'name'), false);
     await verification.close();
 });
 

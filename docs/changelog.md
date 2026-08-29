@@ -1,3 +1,8 @@
+## 1.0.1
+
+- improvements on the cli adding rss, topics, lists
+- bug fixes
+
 ## 1.0.0
 
 - UX overhaul

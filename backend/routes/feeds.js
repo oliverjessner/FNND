@@ -25,7 +25,8 @@ async function isFeedReachable(url) {
 }
 
 const feedSelect = `SELECT feeds.id, feeds.sourceId, feeds.feedUrl, feeds.createdAt, feeds.updatedAt,
-    sources.name, sources.websiteUrl, sources.logo, sources.logoMime
+    COALESCE(NULLIF(feeds.name, ''), sources.name) AS name,
+    sources.websiteUrl, sources.logo, sources.logoMime
     FROM feeds JOIN sources ON sources.id = feeds.sourceId`;
 
 function mapFeed(feed) {
@@ -39,12 +40,34 @@ async function upsertSource({ name, websiteUrl, logoBuffer, logoMime }) {
     await run(
         `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, logo, logoMime, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-         ON CONFLICT(canonicalWebsiteUrl) DO UPDATE SET name = excluded.name,
+         ON CONFLICT(canonicalWebsiteUrl) DO UPDATE SET
            websiteUrl = excluded.websiteUrl, logo = COALESCE(excluded.logo, sources.logo),
            logoMime = COALESCE(excluded.logoMime, sources.logoMime), updatedAt = datetime('now')`,
         [name, websiteUrl, canonicalWebsiteUrl, logoBuffer, logoMime],
     );
     return get('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', [canonicalWebsiteUrl]);
+}
+
+export async function createFeedRecord({ name, websiteUrl, feedUrl, logoBuffer = null, logoMime = null }) {
+    return transaction(async () => {
+        const source = await upsertSource({ name, websiteUrl, logoBuffer, logoMime });
+        const result = await run(
+            `INSERT INTO feeds (sourceId, name, feedUrl, createdAt, updatedAt)
+             VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+            [source.id, name, feedUrl],
+        );
+        return Number(result.lastID);
+    });
+}
+
+export async function updateFeedRecord({ id, name, websiteUrl, feedUrl, logoBuffer = null, logoMime = null }) {
+    return transaction(async () => {
+        const source = await upsertSource({ name, websiteUrl, logoBuffer, logoMime });
+        return run(
+            `UPDATE feeds SET sourceId = ?, name = ?, feedUrl = ?, updatedAt = datetime('now') WHERE id = ?`,
+            [source.id, name, feedUrl, id],
+        );
+    });
 }
 
 router.get('/', auth, async (_, res) => {
@@ -89,14 +112,7 @@ router.post('/', auth, async (req, res) => {
         logoMime = logo.mime;
     }
 
-    const feedId = await transaction(async () => {
-        const source = await upsertSource({ name, websiteUrl, logoBuffer, logoMime });
-        const result = await run(
-            `INSERT INTO feeds (sourceId, feedUrl, createdAt, updatedAt) VALUES (?, ?, datetime('now'), datetime('now'))`,
-            [source.id, feedUrl],
-        );
-        return Number(result.lastID);
-    });
+    const feedId = await createFeedRecord({ name, websiteUrl, feedUrl, logoBuffer, logoMime });
     const feed = await get(`${feedSelect} WHERE feeds.id = ?`, [feedId]);
 
     publish('feeds.updated', { id: feed.id });
@@ -135,13 +151,7 @@ router.put('/:id', auth, async (req, res) => {
         }
     }
 
-    const result = await transaction(async () => {
-        const source = await upsertSource({ name, websiteUrl, logoBuffer, logoMime });
-        return run(
-            `UPDATE feeds SET sourceId = ?, feedUrl = ?, updatedAt = datetime('now') WHERE id = ? AND ? = ?`,
-            [source.id, feedUrl, id, req.auth.ownerId, 'local-owner'],
-        );
-    });
+    const result = await updateFeedRecord({ id, name, websiteUrl, feedUrl, logoBuffer, logoMime });
 
     if (result.changes === 0) {
         return res.status(404).json({ error: 'Feed not found' });

@@ -44,3 +44,20 @@ export function formatDigest(payload, count) {
 
     return JSON.stringify(clusters, null, 2);
 }
+
+export function formatFeeds(feeds, { rssUrl = false } = {}) {
+    const normalizedFeeds = Array.isArray(feeds) ? feeds : [];
+    if (rssUrl) {
+        return normalizedFeeds.map(feed => String(feed.feedUrl || '')).filter(Boolean).join('\n');
+    }
+
+    return JSON.stringify(
+        normalizedFeeds.map(feed => ({
+            name: feed.name,
+            feedUrl: feed.feedUrl,
+            websiteUrl: feed.websiteUrl,
+        })),
+        null,
+        2,
+    );
+}

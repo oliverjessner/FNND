@@ -83,7 +83,7 @@ async function loadGenerationInput(periodId) {
     const rows = await all(
         `SELECT articles.id, articles.feedId, articles.title, articles.teaser, articles.content, articles.url,
                 articles.publishedAt, articles.digestFingerprintJson, articles.externalId AS guidOrHash,
-                sources.name AS sourceName
+                COALESCE(NULLIF(feeds.name, ''), sources.name) AS sourceName
          FROM digest_period_articles
          JOIN articles ON articles.id = digest_period_articles.articleId
          JOIN feeds ON feeds.id = articles.feedId
@@ -232,7 +232,9 @@ async function loadActiveClusters(period, database = { all }) {
                 digest_clusters.articleCount AS clusterCount, digest_clusters.displayPosition,
                 digest_cluster_articles.position, digest_cluster_articles.isRepresentative,
                 articles.id, articles.feedId, articles.title, articles.teaser, articles.url, articles.publishedAt,
-                articles.externalId AS guidOrHash, sources.name AS sourceName, sources.logo IS NOT NULL AS hasSourceLogo,
+                articles.externalId AS guidOrHash,
+                COALESCE(NULLIF(feeds.name, ''), sources.name) AS sourceName,
+                sources.logo IS NOT NULL AS hasSourceLogo,
                 digest_cluster_state.readAt, digest_cluster_state.dismissedAt, digest_cluster_state.completedAt
          FROM digest_clusters
          JOIN digest_cluster_articles ON digest_cluster_articles.digestClusterId = digest_clusters.id

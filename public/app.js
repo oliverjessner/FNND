@@ -97,7 +97,12 @@ function setupLiveUpdates() {
             if (store.ui.activeView === 'main') void loadArticles({ force: true, showLoading: false });
             void settingsModule?.refreshSettingsMeta();
         },
-        feedsUpdated: () => void refreshReferences('feeds'),
+        feedsUpdated: () => {
+            void refreshReferences('feeds');
+            markFeedDirty();
+            markDigestDirty();
+            if (store.ui.activeView === 'main') void loadArticles({ force: true, showLoading: false });
+        },
         listsUpdated: () => void refreshReferences('lists'),
         listItemsUpdated: () => {
             markFeedDirty();
