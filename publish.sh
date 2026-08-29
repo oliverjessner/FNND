@@ -20,9 +20,10 @@ usage() {
     cat <<'EOF'
 Usage: ./publish.sh [--dry-run]
 
-Stages all changes, creates a release commit, pushes the current branch, runs the
-release build, creates and pushes an annotated git tag from package.json.version
-and the first section in docs/changelog.md, then creates a GitHub release.
+Stages and commits pending changes, pushes the current branch, runs the release
+build, creates and pushes an annotated git tag from package.json.version and the
+first section in docs/changelog.md, then creates a GitHub release. If the working
+tree is clean, the current HEAD is released without creating an empty commit.
 
 Options:
   --dry-run   Print the resolved commit, build, tag and release notes without writing anything
@@ -189,7 +190,10 @@ collect_release_artifacts() {
 }
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-    mapfile -t RELEASE_ARTIFACTS < <(collect_release_artifacts "$RELEASE_OUTPUT_DIR" "$VERSION" 0)
+    RELEASE_ARTIFACTS=()
+    while IFS= read -r artifact; do
+        RELEASE_ARTIFACTS+=("$artifact")
+    done < <(collect_release_artifacts "$RELEASE_OUTPUT_DIR" "$VERSION" 0)
     printf 'Branch: %s\n' "$CURRENT_BRANCH"
     printf 'Commit message: %s\n\n' "$COMMIT_MESSAGE"
     printf 'Build command: %s\n\n' "$BUILD_COMMAND"
@@ -209,10 +213,12 @@ fi
 
 printf 'Staging release changes\n'
 git add -A
-git diff --cached --quiet && fail "no changes to commit"
-
-printf 'Creating commit: %s\n' "$COMMIT_MESSAGE"
-git commit -m "$COMMIT_MESSAGE"
+if git diff --cached --quiet; then
+    printf 'No release changes to commit; releasing current HEAD\n'
+else
+    printf 'Creating commit: %s\n' "$COMMIT_MESSAGE"
+    git commit -m "$COMMIT_MESSAGE"
+fi
 
 printf 'Pushing branch %s to %s\n' "$CURRENT_BRANCH" "$GIT_REMOTE"
 git push "$GIT_REMOTE" "$CURRENT_BRANCH"
@@ -220,7 +226,10 @@ git push "$GIT_REMOTE" "$CURRENT_BRANCH"
 printf 'Running build: %s\n' "$BUILD_COMMAND"
 sh -lc "$BUILD_COMMAND"
 git diff --quiet || fail "build modified tracked files; commit those changes before tagging"
-mapfile -t RELEASE_ARTIFACTS < <(collect_release_artifacts "$RELEASE_OUTPUT_DIR" "$VERSION")
+RELEASE_ARTIFACTS=()
+while IFS= read -r artifact; do
+    RELEASE_ARTIFACTS+=("$artifact")
+done < <(collect_release_artifacts "$RELEASE_OUTPUT_DIR" "$VERSION")
 
 git tag -a "$TAG_NAME" -F "$TAG_MESSAGE_FILE"
 printf 'Created tag %s\n' "$TAG_NAME"
