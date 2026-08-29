@@ -143,10 +143,12 @@ const DIGEST_TITLE_ANCHOR_STOPWORDS = new Set([
 
 export function mapArticleRow(row) {
     const logoDataUrl =
-        row.sourceLogo && row.sourceLogoMime
+        row.hasSourceLogo && row.feedId
+            ? `/api/feeds/${encodeURIComponent(row.feedId)}/logo`
+            : row.sourceLogo && row.sourceLogoMime
             ? `data:${row.sourceLogoMime};base64,${row.sourceLogo.toString('base64')}`
             : null;
-    const { sourceLogo, sourceLogoMime, ...rest } = row;
+    const { sourceLogo, sourceLogoMime, hasSourceLogo, ...rest } = row;
     return { ...rest, sourceLogoDataUrl: logoDataUrl };
 }
 
@@ -293,7 +295,7 @@ function toTimestampMs(value) {
     return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function canonicalizeArticleUrl(value) {
+export function canonicalizeArticleUrl(value) {
     if (!value) {
         return null;
     }
@@ -403,7 +405,23 @@ function isSoftDigestMatchAllowed(
     return Math.abs(currentFingerprint.publishedAtMs - clusterFingerprint.publishedAtMs) <= maxDistanceMs;
 }
 
-function createDigestFingerprint(article) {
+export function createDigestFingerprint(article) {
+    if (article?.digestFingerprintJson) {
+        try {
+            const stored = JSON.parse(article.digestFingerprintJson);
+            if (stored && Array.isArray(stored.tokens) && Array.isArray(stored.titleAnchors)) {
+                return {
+                    hash: stored.hash || null,
+                    tokenSet: new Set(stored.tokens),
+                    titleAnchorSet: new Set(stored.titleAnchors),
+                    publishedAtMs: Number(stored.publishedAtMs) || toTimestampMs(article.publishedAt),
+                    canonicalUrl: stored.canonicalUrl || canonicalizeArticleUrl(article.url),
+                };
+            }
+        } catch {
+            // Recompute legacy or corrupt fingerprints.
+        }
+    }
     const normalizedText = normalizeFingerprintText(buildFingerprintText(article));
     const words = tokenizeFingerprintText(normalizedText);
     const effectiveWords = words.length > 0 ? words : tokenizeFingerprintText(normalizedText, { keepStopwords: true });
@@ -429,6 +447,30 @@ function createDigestFingerprint(article) {
 export function clusterDigestArticles(articles) {
     const clusters = [];
     const clusterByCanonicalUrl = new Map();
+    const membersByExactHash = new Map();
+    const membersByHashBucket = new Map();
+    const membersByAnchorPair = new Map();
+
+    const appendIndex = (index, key, value) => {
+        const entries = index.get(key) || [];
+        entries.push(value);
+        index.set(key, entries);
+    };
+    const indexFingerprint = (article, fingerprint, clusterIndex) => {
+        const reference = { article, fingerprint, clusterIndex };
+        if (fingerprint.hash) {
+            appendIndex(membersByExactHash, fingerprint.hash, reference);
+            for (let offset = 0; offset < fingerprint.hash.length; offset += 16) {
+                appendIndex(membersByHashBucket, `${offset}:${fingerprint.hash.slice(offset, offset + 16)}`, reference);
+            }
+        }
+        const anchors = Array.from(fingerprint.titleAnchorSet).sort();
+        for (let left = 0; left < anchors.length; left += 1) {
+            for (let right = left + 1; right < anchors.length; right += 1) {
+                appendIndex(membersByAnchorPair, `${anchors[left]}\u0000${anchors[right]}`, reference);
+            }
+        }
+    };
 
     articles.forEach(article => {
         const fingerprint = createDigestFingerprint(article);
@@ -443,13 +485,35 @@ export function clusterDigestArticles(articles) {
             let bestOverlap = -1;
             let bestAnchorMatches = -1;
 
-            for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex += 1) {
-                const cluster = clusters[clusterIndex];
-
-                for (const member of cluster.members) {
-                    if (!member.fingerprint.hash) {
-                        continue;
+            const exactMembers = membersByExactHash.get(fingerprint.hash) || [];
+            const candidateMembers = new Set();
+            if (exactMembers.length > 0) {
+                const seenClusters = new Set();
+                exactMembers.forEach(member => {
+                    if (!seenClusters.has(member.clusterIndex)) {
+                        seenClusters.add(member.clusterIndex);
+                        candidateMembers.add(member);
                     }
+                });
+            } else {
+                for (let offset = 0; offset < fingerprint.hash.length; offset += 16) {
+                    (membersByHashBucket.get(`${offset}:${fingerprint.hash.slice(offset, offset + 16)}`) || []).forEach(member => candidateMembers.add(member));
+                }
+                const anchors = Array.from(fingerprint.titleAnchorSet).sort();
+                for (let left = 0; left < anchors.length; left += 1) {
+                    for (let right = left + 1; right < anchors.length; right += 1) {
+                        (membersByAnchorPair.get(`${anchors[left]}\u0000${anchors[right]}`) || []).forEach(member => candidateMembers.add(member));
+                    }
+                }
+            }
+            if (DIGEST_STRICT_ANCHOR_MIN_MATCH <= 0) {
+                clusters.forEach((cluster, clusterIndex) => cluster.members.forEach(member => candidateMembers.add({ ...member, clusterIndex })));
+            }
+
+            for (const member of candidateMembers) {
+                    const clusterIndex = member.clusterIndex;
+                    const cluster = clusters[clusterIndex];
+                    if (!cluster || !member.fingerprint.hash) continue;
 
                     const score = similarity(fingerprint.hash, member.fingerprint.hash);
                     const overlapScore = getTokenOverlapScore(fingerprint.tokenSet, member.fingerprint.tokenSet);
@@ -493,7 +557,6 @@ export function clusterDigestArticles(articles) {
                         bestOverlap = overlapScore;
                         bestAnchorMatches = titleAnchorOverlapCount;
                     }
-                }
             }
 
             matchedCluster = bestCluster;
@@ -507,6 +570,7 @@ export function clusterDigestArticles(articles) {
             if (canonicalUrl && Number.isInteger(matchedClusterIndex)) {
                 clusterByCanonicalUrl.set(canonicalUrl, matchedClusterIndex);
             }
+            if (Number.isInteger(matchedClusterIndex)) indexFingerprint(article, fingerprint, matchedClusterIndex);
             return;
         }
 
@@ -518,6 +582,7 @@ export function clusterDigestArticles(articles) {
             members: [{ article, fingerprint }],
         };
         clusters.push(newCluster);
+        indexFingerprint(article, fingerprint, clusters.length - 1);
         if (canonicalUrl) {
             clusterByCanonicalUrl.set(canonicalUrl, clusters.length - 1);
         }

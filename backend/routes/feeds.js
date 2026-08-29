@@ -1,5 +1,5 @@
 import express from 'express';
-import { all, get, run } from '../database/datenbank.js';
+import { all, get, run, transaction } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
 import { isValidUrl } from '../utils/validation.js';
 import Parser from 'rss-parser';
@@ -24,22 +24,48 @@ async function isFeedReachable(url) {
     }
 }
 
-router.get('/', auth, async (_, res) => {
-    const feeds = await all('SELECT * FROM feeds ORDER BY id DESC');
-    const mapped = feeds.map(feed => {
-        const logoDataUrl =
-            feed.logo && feed.logoMime ? `data:${feed.logoMime};base64,${feed.logo.toString('base64')}` : null;
-        const { logo, logoMime, ...rest } = feed;
-        return { ...rest, logoDataUrl };
-    });
+const feedSelect = `SELECT feeds.id, feeds.sourceId, feeds.feedUrl, feeds.createdAt, feeds.updatedAt,
+    sources.name, sources.websiteUrl, sources.logo, sources.logoMime
+    FROM feeds JOIN sources ON sources.id = feeds.sourceId`;
 
-    return res.json(mapped);
+function mapFeed(feed) {
+    const logoDataUrl = feed.logo && feed.logoMime ? `/api/feeds/${encodeURIComponent(feed.id)}/logo` : null;
+    const { logo, logoMime, ...rest } = feed;
+    return { ...rest, logoDataUrl };
+}
+
+async function upsertSource({ name, websiteUrl, logoBuffer, logoMime }) {
+    const canonicalWebsiteUrl = new URL(websiteUrl).toString();
+    await run(
+        `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, logo, logoMime, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+         ON CONFLICT(canonicalWebsiteUrl) DO UPDATE SET name = excluded.name,
+           websiteUrl = excluded.websiteUrl, logo = COALESCE(excluded.logo, sources.logo),
+           logoMime = COALESCE(excluded.logoMime, sources.logoMime), updatedAt = datetime('now')`,
+        [name, websiteUrl, canonicalWebsiteUrl, logoBuffer, logoMime],
+    );
+    return get('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', [canonicalWebsiteUrl]);
+}
+
+router.get('/', auth, async (_, res) => {
+    const feeds = await all(`${feedSelect} ORDER BY feeds.id DESC`);
+    return res.json(feeds.map(mapFeed));
+});
+
+router.get('/:id/logo', auth, async (req, res) => {
+    const row = await get(
+        `SELECT sources.logo, sources.logoMime FROM feeds
+         JOIN sources ON sources.id = feeds.sourceId WHERE feeds.id = ?`,
+        [req.params.id],
+    );
+    if (!row?.logo || !row?.logoMime) return res.status(404).end();
+    res.setHeader('Content-Type', row.logoMime);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    return res.send(row.logo);
 });
 
 router.post('/', auth, async (req, res) => {
     const { name, websiteUrl, feedUrl } = req.body || {};
-    const reachable = await isFeedReachable(feedUrl);
-    const logo = await fetchSiteLogo(websiteUrl);
     let logoBuffer = null;
     let logoMime = null;
 
@@ -49,38 +75,38 @@ router.post('/', auth, async (req, res) => {
     if (!isValidUrl(websiteUrl) || !isValidUrl(feedUrl)) {
         return res.status(400).json({ error: 'Invalid URL format' });
     }
+    if (await get('SELECT id FROM feeds WHERE feedUrl = ?', [feedUrl])) {
+        return res.status(409).json({ error: 'Feed URL already exists' });
+    }
+    const reachable = await isFeedReachable(feedUrl);
     if (!reachable) {
         return res.status(400).json({ error: 'Feed URL not reachable' });
     }
 
+    const logo = await fetchSiteLogo(websiteUrl);
     if (logo) {
         logoBuffer = logo.buffer;
         logoMime = logo.mime;
     }
 
-    const result = await run(
-        `INSERT INTO feeds (name, websiteUrl, feedUrl, logo, logoMime, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        [name, websiteUrl, feedUrl, logoBuffer, logoMime],
-    );
-    const feed = await get('SELECT * FROM feeds WHERE id = ? AND ? = ?', [
-        result.lastID,
-        req.auth.ownerId,
-        'local-owner',
-    ]);
-    const logoDataUrl =
-        feed.logo && feed.logoMime ? `data:${feed.logoMime};base64,${feed.logo.toString('base64')}` : null;
-    const { logo: logoBlob, logoMime: logoMimeType, ...rest } = feed;
+    const feedId = await transaction(async () => {
+        const source = await upsertSource({ name, websiteUrl, logoBuffer, logoMime });
+        const result = await run(
+            `INSERT INTO feeds (sourceId, feedUrl, createdAt, updatedAt) VALUES (?, ?, datetime('now'), datetime('now'))`,
+            [source.id, feedUrl],
+        );
+        return Number(result.lastID);
+    });
+    const feed = await get(`${feedSelect} WHERE feeds.id = ?`, [feedId]);
 
     publish('feeds.updated', { id: feed.id });
-    return res.status(201).json({ ...rest, logoDataUrl });
+    return res.status(201).json(mapFeed(feed));
 });
 
 router.put('/:id', auth, async (req, res) => {
     const { id } = req.params;
     const { name, websiteUrl, feedUrl } = req.body || {};
-    const reachable = await isFeedReachable(feedUrl);
-    const existing = await get('SELECT * FROM feeds WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
+    const existing = await get(`${feedSelect} WHERE feeds.id = ? AND ? = ?`, [id, req.auth.ownerId, 'local-owner']);
 
     if (!name || !websiteUrl || !feedUrl) {
         return res.status(400).json({ error: 'name, websiteUrl, and feedUrl are required' });
@@ -88,6 +114,9 @@ router.put('/:id', auth, async (req, res) => {
     if (!isValidUrl(websiteUrl) || !isValidUrl(feedUrl)) {
         return res.status(400).json({ error: 'Invalid URL format' });
     }
+    const duplicate = await get('SELECT id FROM feeds WHERE feedUrl = ? AND id <> ?', [feedUrl, id]);
+    if (duplicate) return res.status(409).json({ error: 'Feed URL already exists' });
+    const reachable = await isFeedReachable(feedUrl);
     if (!reachable) {
         return res.status(400).json({ error: 'Feed URL not reachable' });
     }
@@ -106,24 +135,22 @@ router.put('/:id', auth, async (req, res) => {
         }
     }
 
-    const result = await run(
-        `UPDATE feeds
-     SET name = ?, websiteUrl = ?, feedUrl = ?, logo = ?, logoMime = ?, updatedAt = datetime('now')
-     WHERE id = ? AND ? = ?`,
-        [name, websiteUrl, feedUrl, logoBuffer, logoMime, id, req.auth.ownerId, 'local-owner'],
-    );
+    const result = await transaction(async () => {
+        const source = await upsertSource({ name, websiteUrl, logoBuffer, logoMime });
+        return run(
+            `UPDATE feeds SET sourceId = ?, feedUrl = ?, updatedAt = datetime('now') WHERE id = ? AND ? = ?`,
+            [source.id, feedUrl, id, req.auth.ownerId, 'local-owner'],
+        );
+    });
 
     if (result.changes === 0) {
         return res.status(404).json({ error: 'Feed not found' });
     }
 
-    const feed = await get('SELECT * FROM feeds WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
-    const logoDataUrl =
-        feed.logo && feed.logoMime ? `data:${feed.logoMime};base64,${feed.logo.toString('base64')}` : null;
-    const { logo: logoBlob, logoMime: logoMimeType, ...rest } = feed;
+    const feed = await get(`${feedSelect} WHERE feeds.id = ? AND ? = ?`, [id, req.auth.ownerId, 'local-owner']);
 
     publish('feeds.updated', { id: feed.id });
-    res.json({ ...rest, logoDataUrl });
+    res.json(mapFeed(feed));
 });
 
 router.delete('/:id', auth, async (req, res) => {

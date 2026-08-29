@@ -2,7 +2,7 @@ import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
 import { queryArticles } from '../services/article-queries.js';
-import { buildDigestPayload } from '../services/digest-payload.js';
+import { getStoredDigestPayload, setDigestClustersCompleted } from '../services/digest-store.js';
 import { normalizeDigestVariant } from './digest.js';
 import { publish } from '../services/events.js';
 import { logInfo } from '../utils/logger.js';
@@ -126,33 +126,9 @@ async function buildArticleListsBulkPayload(articleIds) {
     };
 }
 
-export async function setArticlesDigestedStateInTransaction(articleIds, digested) {
+export async function setArticlesDigestedStateInTransaction(articleIds, digested, variant = 'day') {
     const ids = normalizeArticleIds(articleIds);
-    if (ids.length === 0) {
-        return { updated: 0, total: 0 };
-    }
-
-    await run('BEGIN IMMEDIATE');
-    let updated = 0;
-    try {
-        for (const chunk of chunkArray(ids, 400)) {
-            const result = await run(
-                'UPDATE articles SET dailyDigested = ? WHERE id IN (SELECT value FROM json_each(?))',
-                [digested ? 1 : 0, JSON.stringify(chunk)],
-            );
-            updated += Number(result?.changes || 0);
-        }
-        await run('COMMIT');
-    } catch (err) {
-        try {
-            await run('ROLLBACK');
-        } catch {
-            // Preserve the original transaction error.
-        }
-        throw err;
-    }
-
-    return { updated, total: ids.length };
+    return setDigestClustersCompleted(ids, digested, normalizeDigestVariant(variant));
 }
 
 export async function setArticleDismissedState(articleId, dismissed) {
@@ -161,66 +137,31 @@ export async function setArticleDismissedState(articleId, dismissed) {
         return false;
     }
 
-    await run("UPDATE articles SET dismissedAt = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ?", [
-        dismissed ? 1 : 0,
-        articleId,
-    ]);
+    await run(
+        `INSERT INTO article_state (articleId, dismissedAt, createdAt, updatedAt)
+         VALUES (?, CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END, datetime('now'), datetime('now'))
+         ON CONFLICT(articleId) DO UPDATE SET dismissedAt = excluded.dismissedAt, updatedAt = datetime('now')`,
+        [articleId, dismissed ? 1 : 0],
+    );
     return true;
 }
 
 async function handleDigestRequest(req, res) {
     const variant = normalizeDigestVariant(req.query?.variant || req.query?.range || 'day');
-    const payload = await buildDigestPayload(variant, { all });
+    const payload = await getStoredDigestPayload(variant);
     return res.json(payload);
 }
 
-async function handleMarkArticleDigested(req, res) {
-    const articleId = Number(req.params?.id);
-    if (!Number.isInteger(articleId) || articleId <= 0) {
-        return res.status(400).json({ error: 'Invalid article id' });
-    }
-
-    const existing = await get('SELECT id, dailyDigested FROM articles WHERE id = ? AND ? = ?', [
-        articleId,
-        req.auth.ownerId,
-        'local-owner',
-    ]);
-    if (!existing) {
-        return res.status(404).json({ error: 'Article not found' });
-    }
-
-    await run('UPDATE articles SET dailyDigested = 1 WHERE id = ? AND ? = ?', [articleId, req.auth.ownerId, 'local-owner']);
-    publish('articles.updated', { source: 'digest', articleId, dailyDigested: true });
-
-    return res.json({
-        ok: true,
-        id: articleId,
-        digested: true,
-        dailyDigested: true,
-        alreadyDigested: Boolean(existing.dailyDigested),
-    });
-}
-
-async function handleMarkAllDigested(req, res) {
+async function handleSetDigestState(req, res) {
     const articleIds = normalizeArticleIds(req.body?.articleIds);
-    const result = await setArticlesDigestedStateInTransaction(articleIds, true);
+    const variant = normalizeDigestVariant(req.body?.variant || 'day');
+    const completed = req.body?.completed !== false;
+    const result = await setArticlesDigestedStateInTransaction(articleIds, completed, variant);
     publish('articles.updated', {
         source: 'digest',
         batch: true,
-        updated: result.updated,
-        total: result.total,
-    });
-
-    return res.json({ ok: true, ...result });
-}
-
-async function handleRestoreDigested(req, res) {
-    const articleIds = normalizeArticleIds(req.body?.articleIds);
-    const result = await setArticlesDigestedStateInTransaction(articleIds, false);
-    publish('articles.updated', {
-        source: 'digest',
-        batch: true,
-        restored: true,
+        completed,
+        variant,
         updated: result.updated,
         total: result.total,
     });
@@ -248,9 +189,9 @@ router.get('/stats', auth, async (_req, res) => {
     const row = await get(
         `SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN dismissedAt IS NULL THEN 1 ELSE 0 END) AS unread,
-            SUM(CASE WHEN dismissedAt IS NOT NULL THEN 1 ELSE 0 END) AS dismissed
-         FROM articles`,
+            SUM(CASE WHEN article_state.dismissedAt IS NULL THEN 1 ELSE 0 END) AS unread,
+            SUM(CASE WHEN article_state.dismissedAt IS NOT NULL THEN 1 ELSE 0 END) AS dismissed
+         FROM articles LEFT JOIN article_state ON article_state.articleId = articles.id`,
     );
     return res.json({
         total: Number(row?.total || 0),
@@ -260,23 +201,15 @@ router.get('/stats', auth, async (_req, res) => {
 });
 
 router.get('/digest', auth, handleDigestRequest);
-router.get('/daily-digest', auth, async (_req, res) => {
-    const payload = await buildDigestPayload('day', { all });
-    return res.json(payload);
-});
-router.patch('/:id/digested', auth, handleMarkArticleDigested);
-router.patch('/:id/daily-digested', auth, handleMarkArticleDigested);
-router.post('/digest/mark-all-digested', auth, handleMarkAllDigested);
-router.post('/daily-digest/mark-all-digested', auth, handleMarkAllDigested);
-router.post('/digest/restore', auth, handleRestoreDigested);
+router.post('/digest/state', auth, handleSetDigestState);
 router.patch('/:id/dismissed', auth, handleSetDismissed);
 
-router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, limit = 100, offset = 0 } }, res) => {
+router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, limit = 100, offset = 0, cursorPublishedAt, cursorId } }, res) => {
     if (query) {
         logInfo('Search query', { query });
     }
     const articles = await queryArticles(
-        { feedId, source, listId, topic, query, limit, offset, activeOnly: true, includeTopics: true, maxLimit: 250 },
+        { feedId, source, listId, topic, query, limit, offset, cursorPublishedAt, cursorId, activeOnly: true, includeTopics: true, maxLimit: 250 },
         { all },
     );
     return res.json(articles);

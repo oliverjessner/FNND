@@ -1,0 +1,46 @@
+export async function apiFetch(path, options = {}) {
+    const headers = new Headers(options.headers || {});
+    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    const response = await fetch(path, { ...options, headers });
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${response.status}`);
+    }
+    return response.status === 204 ? null : response.json();
+}
+
+const json = (method, body, signal) => ({ method, body: JSON.stringify(body), signal });
+export const api = Object.freeze({
+    feeds: () => apiFetch('/api/feeds'),
+    createFeed: body => apiFetch('/api/feeds', json('POST', body)),
+    updateFeed: (id, body) => apiFetch(`/api/feeds/${id}`, json('PUT', body)),
+    deleteFeed: id => apiFetch(`/api/feeds/${id}`, { method: 'DELETE' }),
+    testFeed: url => apiFetch(`/api/feeds/test/url?url=${encodeURIComponent(url)}`),
+    lists: () => apiFetch('/api/lists'),
+    createList: body => apiFetch('/api/lists', json('POST', body)),
+    updateList: (id, body) => apiFetch(`/api/lists/${id}`, json('PUT', body)),
+    deleteList: id => apiFetch(`/api/lists/${id}`, { method: 'DELETE' }),
+    articleLists: ids => apiFetch('/api/articles/lists/bulk', json('POST', { articleIds: ids })),
+    addToList: (listId, ids) => apiFetch(`/api/lists/${listId}/items/bulk`, json('POST', { articleIds: ids })),
+    removeFromList: (listId, ids) => apiFetch(`/api/lists/${listId}/items/bulk-delete`, json('POST', { articleIds: ids })),
+    topics: () => apiFetch('/api/topics'),
+    topicRules: () => apiFetch('/api/topics/rules'),
+    createTopic: body => apiFetch('/api/topics', json('POST', body)),
+    updateTopic: (slug, body) => apiFetch(`/api/topics/${encodeURIComponent(slug)}`, json('PUT', body)),
+    deleteTopic: slug => apiFetch(`/api/topics/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
+    validateTopics: source => apiFetch('/api/topics/validate', json('POST', { json: source })),
+    saveTopicRules: source => apiFetch('/api/topics/rules', json('PUT', { json: source })),
+    reprocessTopics: () => apiFetch('/api/topics/reprocess', { method: 'POST' }),
+    articles: (params, signal) => apiFetch(`/api/articles?${params}`, { signal }),
+    articleStats: () => apiFetch('/api/articles/stats'),
+    dismissArticle: (id, dismissed) => apiFetch(`/api/articles/${id}/dismissed`, json('PATCH', { dismissed })),
+    digest: (range, signal) => apiFetch(`/api/articles/digest?${new URLSearchParams({ variant: range })}`, { signal }),
+    markDigested: (ids, variant = 'day') => apiFetch('/api/articles/digest/state', json('POST', { articleIds: ids, variant, completed: true })),
+    restoreDigested: (ids, variant = 'day') => apiFetch('/api/articles/digest/state', json('POST', { articleIds: ids, variant, completed: false })),
+    digestSettings: () => apiFetch('/api/digest-settings'),
+    saveExcludedFeeds: ids => apiFetch('/api/digest-settings/excluded-feeds', json('PUT', { feedIds: ids })),
+    addBlockedWord: word => apiFetch('/api/digest-settings/blocked-words', json('POST', { word })),
+    deleteBlockedWord: id => apiFetch(`/api/digest-settings/blocked-words/${id}`, { method: 'DELETE' }),
+    fetchStatus: () => apiFetch('/api/fetch/status'),
+    runFetch: () => apiFetch('/api/fetch/run', { method: 'POST' }),
+});

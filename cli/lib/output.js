@@ -1,4 +1,4 @@
-function compactArticle(article) {
+export function compactArticle(article) {
     return {
         id: article.id,
         title: article.title,
@@ -6,6 +6,13 @@ function compactArticle(article) {
         publishedAt: article.publishedAt,
         sourceName: article.sourceName,
     };
+}
+
+export function formatChosenArticle(article, options = {}) {
+    if (options.url || options.title) {
+        return formatLastArticles([article], options);
+    }
+    return JSON.stringify(compactArticle(article), null, 2);
 }
 
 export function formatLastArticles(articles, { url = false, title = false } = {}) {

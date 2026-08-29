@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import sqlite3 from '@vscode/sqlite3';
 import { parseCliArgs } from './lib/arguments.js';
+import { chooseArticle } from './lib/choose.js';
 import { discoverDatabasePath, getElectronDatabasePath } from './lib/database-path.js';
-import { formatDigest, formatLastArticles } from './lib/output.js';
+import { formatChosenArticle, formatDigest, formatLastArticles } from './lib/output.js';
 import { runCli } from './main.js';
+import { getDigestPeriodDefinition } from '../backend/services/digest-periods.js';
 
 function createCaptureStream() {
     let value = '';
@@ -37,50 +40,43 @@ async function createFixtureDatabase(databasePath) {
             database.close(error => (error ? reject(error) : resolve()));
         });
 
-    await exec(`
-        PRAGMA foreign_keys = ON;
-        CREATE TABLE feeds (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            logo BLOB,
-            logoMime TEXT
-        );
-        CREATE TABLE articles (
-            id INTEGER PRIMARY KEY,
-            feedId INTEGER NOT NULL,
-            title TEXT,
-            teaser TEXT,
-            content TEXT,
-            url TEXT,
-            publishedAt TEXT,
-            guidOrHash TEXT NOT NULL,
-            dailyDigested INTEGER NOT NULL DEFAULT 0,
-            dismissedAt TEXT,
-            FOREIGN KEY (feedId) REFERENCES feeds(id)
-        );
-        CREATE TABLE list_items (listId INTEGER NOT NULL, articleId INTEGER NOT NULL);
-        CREATE TABLE digest_excluded_feeds (feedId INTEGER PRIMARY KEY);
-        CREATE TABLE digest_blocked_words (id INTEGER PRIMARY KEY, word TEXT NOT NULL);
-        CREATE TABLE topics (slug TEXT PRIMARY KEY, label TEXT NOT NULL);
-        CREATE TABLE article_topics (
-            articleId INTEGER NOT NULL,
-            topicSlug TEXT NOT NULL,
-            score REAL NOT NULL
-        );
-
-        INSERT INTO feeds (id, name) VALUES (1, 'Test Source');
-    `);
+    await exec(await readFile(new URL('../migrations-v2/0001_schema.sql', import.meta.url), 'utf8'));
 
     const now = new Date();
     const newestTimestamp = new Date(now.getTime() - 60_000).toISOString();
     const olderTimestamp = new Date(now.getTime() - 3_600_000).toISOString();
+    const period = getDigestPeriodDefinition('day', now, 'Europe/Vienna');
     await exec(`
+        INSERT INTO sources (id, name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+        VALUES (1, 'Test Source', 'https://example.com', 'https://example.com/', datetime('now'), datetime('now'));
+        INSERT INTO feeds (id, sourceId, feedUrl, createdAt, updatedAt)
+        VALUES (1, 1, 'https://example.com/feed', datetime('now'), datetime('now'));
         INSERT INTO articles
-            (id, feedId, title, teaser, url, publishedAt, guidOrHash, dailyDigested, dismissedAt)
+            (id, feedId, externalId, title, teaser, url, canonicalUrl, contentHash, publishedAt, fetchedAt,
+             createdAt, updatedAt, classificationStatus)
         VALUES
-            (1, 1, 'Older', 'Older teaser', 'https://example.com/older', '${olderTimestamp}', 'older', 1, NULL),
-            (2, 1, 'Same time lower id', 'Digest topic alpha', 'https://example.com/two', '${newestTimestamp}', 'two', 0, NULL),
-            (3, 1, 'Same time higher id', 'Digest topic beta', 'https://example.com/three', '${newestTimestamp}', 'three', 0, datetime('now'));
+            (1, 1, 'older', 'Older', 'Older teaser', 'https://example.com/older', 'https://example.com/older', 'h1', '${olderTimestamp}', '${now.toISOString()}', datetime('now'), datetime('now'), 'ready'),
+            (2, 1, 'two', 'Same time lower id', 'Digest topic alpha', 'https://example.com/two', 'https://example.com/two', 'h2', '${newestTimestamp}', '${now.toISOString()}', datetime('now'), datetime('now'), 'ready'),
+            (3, 1, 'three', 'Same time higher id', 'Digest topic beta', 'https://example.com/three', 'https://example.com/three', 'h3', '${newestTimestamp}', '${now.toISOString()}', datetime('now'), datetime('now'), 'ready');
+        INSERT INTO article_state (articleId, dismissedAt, createdAt, updatedAt) VALUES
+            (1, NULL, datetime('now'), datetime('now')),
+            (2, NULL, datetime('now'), datetime('now')),
+            (3, datetime('now'), datetime('now'), datetime('now'));
+        INSERT INTO digest_periods
+            (id, type, periodKey, startsAt, endsAt, timezone, status, activeGenerationId, generatedAt,
+             algorithmVersion, rulesVersion, createdAt, updatedAt)
+        VALUES (1, 'day', '${period.periodKey}', '${period.startsAt}', '${period.endsAt}', 'Europe/Vienna', 'ready', 1,
+                datetime('now'), 'test', 'test', datetime('now'), datetime('now'));
+        INSERT INTO digest_generations
+            (id, digestPeriodId, generationNumber, status, sourceArticleCount, clusterCount, algorithmVersion, rulesVersion, startedAt, generatedAt)
+        VALUES (1, 1, 1, 'ready', 1, 1, 'test', 'test', datetime('now'), datetime('now'));
+        INSERT INTO digest_clusters
+            (id, digestGenerationId, clusterKey, title, representativeArticleId, articleCount, firstPublishedAt,
+             lastPublishedAt, fingerprint, displayPosition)
+        VALUES (1, 1, 'cluster-2', 'Same time lower id', 2, 1, '${newestTimestamp}', '${newestTimestamp}', 'fp', 0);
+        INSERT INTO digest_cluster_articles
+            (digestClusterId, digestGenerationId, articleId, position, similarity, isRepresentative)
+        VALUES (1, 1, 2, 0, NULL, 1);
     `);
 
     return { close };
@@ -92,24 +88,35 @@ test('parses article projections and digest ranges', () => {
         count: 10,
         url: true,
         title: false,
+        choose: false,
     });
     assert.deepEqual(parseCliArgs(['articles', 'last', '10', '--title']), {
         command: 'articles-last',
         count: 10,
         url: false,
         title: true,
+        choose: false,
     });
     assert.deepEqual(parseCliArgs(['articles', 'last', '10', '--titles']), {
         command: 'articles-last',
         count: 10,
         url: false,
         title: true,
+        choose: false,
     });
     assert.deepEqual(parseCliArgs(['articles', 'last', '10', '--url', '--titles']), {
         command: 'articles-last',
         count: 10,
         url: true,
         title: true,
+        choose: false,
+    });
+    assert.deepEqual(parseCliArgs(['articles', 'last', '10', '--choose', '--url']), {
+        command: 'articles-last',
+        count: 10,
+        url: true,
+        title: false,
+        choose: true,
     });
     assert.deepEqual(parseCliArgs(['articles', 'digest', '5']), {
         command: 'articles-digest',
@@ -127,6 +134,7 @@ test('rejects invalid counts, flags and multiple digest ranges', () => {
     assert.throws(() => parseCliArgs(['articles', 'last', 'foo']), /greater than 0/u);
     assert.throws(() => parseCliArgs(['articles', 'last', '1.5']), /greater than 0/u);
     assert.throws(() => parseCliArgs(['articles', 'last', '2', '--weekly']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['articles', 'digest', '2', '--choose']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['unknown', 'last', '2']), /Unknown resource/u);
     assert.throws(() => parseCliArgs(['articles', 'unknown', '2']), /Unknown articles command/u);
     assert.throws(
@@ -178,6 +186,15 @@ test('formats URL, title, combined and compact JSON output', () => {
             sourceName: 'Example',
         },
     ]);
+    assert.equal(formatChosenArticle(articles[0], { url: true }), 'https://example.com/a');
+    assert.equal(formatChosenArticle(articles[0], { title: true }), 'A title');
+    assert.deepEqual(JSON.parse(formatChosenArticle(articles[0])), {
+        id: 7,
+        title: 'A title',
+        url: 'https://example.com/a',
+        publishedAt: '2026-01-01T00:00:00.000Z',
+        sourceName: 'Example',
+    });
     assert.deepEqual(
         JSON.parse(
             formatDigest(
@@ -210,6 +227,38 @@ test('formats URL, title, combined and compact JSON output', () => {
     );
 });
 
+test('chooses an article with keyboard navigation and restores terminal state', async () => {
+    const input = new EventEmitter();
+    input.isTTY = true;
+    input.isRaw = false;
+    input.setRawMode = value => {
+        input.isRaw = value;
+    };
+    input.resume = () => {};
+    input.pause = () => {};
+
+    const output = createCaptureStream();
+    output.isTTY = true;
+    output.rows = 24;
+    output.columns = 100;
+
+    const articles = [
+        { id: 1, title: 'First', sourceName: 'One' },
+        { id: 2, title: 'Second', sourceName: 'Two' },
+    ];
+    const selection = chooseArticle(articles, { input, output });
+    input.emit('keypress', '', { name: 'down' });
+    input.emit('keypress', '', { name: 'return' });
+
+    assert.equal((await selection).id, 2);
+    assert.equal(input.isRaw, false);
+    assert.match(output.read(), /Choose an article/u);
+});
+
+test('rejects interactive selection without a TTY', async () => {
+    await assert.rejects(chooseArticle([{ id: 1 }], { input: {}, output: {} }), /interactive terminal/u);
+});
+
 test('discovers DB_PATH, repository and Electron databases in priority order', async t => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'no-bullshit-rss-cli-path-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
@@ -222,8 +271,8 @@ test('discovers DB_PATH, repository and Electron databases in priority order', a
     const nested = path.join(repository, 'nested');
     await mkdir(nested, { recursive: true });
     await writeFile(path.join(repository, 'package.json'), JSON.stringify({ name: 'no-bullshit-rss' }));
-    await writeFile(path.join(repository, 'data.db'), 'fixture');
-    assert.equal(await discoverDatabasePath({ cwd: nested, env: {} }), path.join(repository, 'data.db'));
+    await writeFile(path.join(repository, 'data-v2.db'), 'v2 fixture');
+    assert.equal(await discoverDatabasePath({ cwd: nested, env: {} }), path.join(repository, 'data-v2.db'));
 
     const homeDir = path.join(directory, 'home');
     const electronPath = getElectronDatabasePath({ platform: 'linux', env: {}, homeDir });
@@ -259,6 +308,19 @@ test('runs article and digest commands against only a temporary DB without write
         [3, 2, 1],
     );
 
+    const chosenStdout = createCaptureStream();
+    const chosenStderr = createCaptureStream();
+    const chosenExitCode = await runCli(['articles', 'last', '3', '--choose', '--url'], {
+        stdout: chosenStdout,
+        stderr: chosenStderr,
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+        chooseArticle: async articles => articles[1],
+    });
+    assert.equal(chosenExitCode, 0);
+    assert.equal(chosenStderr.read(), '');
+    assert.equal(chosenStdout.read(), 'https://example.com/two\n');
+
     const digestStdout = createCaptureStream();
     const digestStderr = createCaptureStream();
     const digestExitCode = await runCli(['articles', 'digest', '10', '--daily'], {
@@ -274,13 +336,15 @@ test('runs article and digest commands against only a temporary DB without write
     assert.equal(clusters[0].articles[0].title, 'Same time lower id');
 
     const verification = await createFixtureReader(databasePath);
-    const persisted = await verification.all('SELECT id, dailyDigested, dismissedAt FROM articles ORDER BY id');
+    const persisted = await verification.all(
+        'SELECT articles.id, article_state.dismissedAt FROM articles JOIN article_state ON article_state.articleId = articles.id ORDER BY articles.id',
+    );
     assert.deepEqual(
-        persisted.map(row => [row.id, row.dailyDigested, Boolean(row.dismissedAt)]),
+        persisted.map(row => [row.id, Boolean(row.dismissedAt)]),
         [
-            [1, 1, false],
-            [2, 0, false],
-            [3, 0, true],
+            [1, false],
+            [2, false],
+            [3, true],
         ],
     );
     await verification.close();

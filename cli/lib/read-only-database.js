@@ -10,8 +10,20 @@ export async function openReadOnlyDatabase(databasePath) {
             resolve(database);
         });
     });
+    connection.configure('busyTimeout', 5000);
 
     return {
+        get(sql, params = []) {
+            return new Promise((resolve, reject) => {
+                connection.get(sql, params, (error, row) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
+                    resolve(row);
+                });
+            });
+        },
         all(sql, params = []) {
             return new Promise((resolve, reject) => {
                 connection.all(sql, params, (error, rows) => {

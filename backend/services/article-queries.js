@@ -41,13 +41,13 @@ export async function loadTopicsByArticleIds(articleIds, { all }) {
             `
             SELECT
                 article_topics.articleId AS articleId,
-                article_topics.topicSlug AS topicSlug,
+                topics.slug AS topicSlug,
                 topics.label AS topicLabel,
                 article_topics.score AS score
             FROM article_topics
-            JOIN topics ON topics.slug = article_topics.topicSlug
+            JOIN topics ON topics.id = article_topics.topicId
             WHERE article_topics.articleId IN (SELECT value FROM json_each(?))
-            ORDER BY article_topics.score DESC, article_topics.topicSlug ASC
+            ORDER BY article_topics.score DESC, topics.slug ASC
             `,
             [JSON.stringify(chunk)],
         );
@@ -82,6 +82,8 @@ export async function queryArticles(
         activeOnly = true,
         includeTopics = true,
         maxLimit = 250,
+        cursorPublishedAt,
+        cursorId,
     } = {},
     { all },
 ) {
@@ -92,7 +94,7 @@ export async function queryArticles(
         whereParts.push('feeds.id = ?');
         params.push(feedId);
     } else if (source) {
-        whereParts.push('feeds.name = ?');
+        whereParts.push('sources.name = ?');
         params.push(source);
     }
     if (listId) {
@@ -100,16 +102,26 @@ export async function queryArticles(
         params.push(listId);
     }
     if (topic) {
-        whereParts.push('EXISTS (SELECT 1 FROM article_topics WHERE article_topics.articleId = articles.id AND article_topics.topicSlug = ?)');
+        whereParts.push(`EXISTS (
+            SELECT 1 FROM article_topics
+            JOIN topics ON topics.id = article_topics.topicId
+            WHERE article_topics.articleId = articles.id AND topics.slug = ?
+        )`);
         params.push(String(topic).trim().toLowerCase());
     }
     if (query) {
-        const like = `%${query}%`;
-        whereParts.push('(articles.title LIKE ? OR articles.teaser LIKE ? OR feeds.name LIKE ?)');
-        params.push(like, like, like);
+        const terms = String(query).normalize('NFKC').match(/[\p{L}\p{N}]+/gu) || [];
+        if (terms.length > 0) {
+            whereParts.push('articles.id IN (SELECT rowid FROM articles_fts WHERE articles_fts MATCH ?)');
+            params.push(terms.slice(0, 12).map(term => `"${term.replace(/"/g, '""')}"*`).join(' AND '));
+        }
     }
     if (activeOnly) {
-        whereParts.push('articles.dismissedAt IS NULL');
+        whereParts.push('article_state.dismissedAt IS NULL');
+    }
+    if (cursorPublishedAt && Number.isInteger(Number(cursorId)) && Number(cursorId) > 0) {
+        whereParts.push('(articles.publishedAt < ? OR (articles.publishedAt = ? AND articles.id < ?))');
+        params.push(cursorPublishedAt, cursorPublishedAt, Number(cursorId));
     }
 
     const parsedLimit = Number(limit);
@@ -121,10 +133,14 @@ export async function queryArticles(
     const normalizedOffset = Number.isFinite(parsedOffset) ? Math.max(Math.trunc(parsedOffset), 0) : 0;
 
     const sql = [
-        `SELECT articles.*, feeds.name as sourceName, feeds.logo as sourceLogo, feeds.logoMime as sourceLogoMime,
+        `SELECT articles.id, articles.feedId, articles.title, articles.teaser, articles.url,
+         articles.publishedAt, articles.createdAt, articles.updatedAt, article_state.dismissedAt,
+         sources.name as sourceName, sources.logo IS NOT NULL AS hasSourceLogo,
          EXISTS (SELECT 1 FROM list_items WHERE list_items.articleId = articles.id) AS saved`,
         'FROM articles',
         'JOIN feeds ON feeds.id = articles.feedId',
+        'JOIN sources ON sources.id = feeds.sourceId',
+        'LEFT JOIN article_state ON article_state.articleId = articles.id',
         whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '',
         'ORDER BY articles.publishedAt DESC, articles.id DESC',
         'LIMIT ? OFFSET ?',

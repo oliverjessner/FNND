@@ -10,6 +10,7 @@ process.env.TOPIC_RULES_FILE_PATH = path.join(testDirectory, 'topics.rules.json'
 
 const database = await import('../database/datenbank.js');
 const topics = await import('./topics.js');
+const { ingestArticle } = await import('./article-ingest.js');
 
 after(async () => {
     await new Promise(resolve => database.default.close(resolve));
@@ -36,25 +37,20 @@ test('topic config persists and reprocessing assigns only eligible topics', asyn
     assert.equal(loaded.minMatches, 2);
     assert.deepEqual(loaded.exclude, ['stock market']);
 
+    const source = await database.run(
+        `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        ['Test feed', 'https://example.test', 'https://example.test/'],
+    );
     const feed = await database.run(
-        'INSERT INTO feeds (name, websiteUrl, feedUrl) VALUES (?, ?, ?)',
-        ['Test feed', 'https://example.test', 'https://example.test/feed'],
+        "INSERT INTO feeds (sourceId, feedUrl, createdAt, updatedAt) VALUES (?, ?, datetime('now'), datetime('now'))",
+        [source.lastID, 'https://example.test/feed'],
     );
-    await database.run(
-        'INSERT INTO articles (feedId, title, teaser, content, url, publishedAt, guidOrHash) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [
-            feed.lastID,
-            'OpenAI updates ChatGPT',
-            'Both products improve',
-            '',
-            'https://example.test/article',
-            new Date().toISOString(),
-            'topic-test-article',
-        ],
-    );
+    await ingestArticle({ feedId: feed.lastID, externalId: 'topic-test-article', title: 'OpenAI updates ChatGPT', teaser: 'Both products improve', url: 'https://example.test/article' });
+    await database.run("UPDATE articles SET classificationStatus = 'pending'");
 
     const result = await topics.reprocessTopicClassificationForAllArticles();
-    const assignments = await database.all('SELECT topicSlug FROM article_topics ORDER BY topicSlug');
+    const assignments = await database.all('SELECT topics.slug AS topicSlug FROM article_topics JOIN topics ON topics.id = article_topics.topicId ORDER BY topics.slug');
 
     assert.equal(result.processed, 1);
     assert.equal(result.topicAssignments, 1);

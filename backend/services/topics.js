@@ -1,8 +1,9 @@
 import { Engine } from 'json-rules-engine';
+import crypto from 'node:crypto';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { all, get, run } from '../database/datenbank.js';
+import { all, get, run, transaction } from '../database/datenbank.js';
 import { logInfo, logWarn } from '../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,10 @@ let engineCache = {
 
 function toStableJson(value) {
     return JSON.stringify(value, null, 2);
+}
+
+function hashValue(value) {
+    return crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 }
 
 function slugToLabel(slug) {
@@ -297,22 +302,25 @@ function invalidateTopicCaches() {
 async function saveTopicDefinitionsToDatabase(definitions) {
     const normalized = validateAndNormalizeTopicDefinitions(definitions);
     const slugs = normalized.map(topic => topic.slug);
+    const classificationVersion = hashValue(definitionsToRulesObject(normalized));
 
-    await run('BEGIN IMMEDIATE');
-    try {
+    await transaction(async () => {
         for (const topic of normalized) {
             const configJson = JSON.stringify(topicDefinitionToConfig(topic));
+            const ruleHash = hashValue({ slug: topic.slug, label: topic.label, configJson });
 
             await run(
                 [
-                    'INSERT INTO topics (slug, label, configJson, createdAt, updatedAt)',
-                    'VALUES (?, ?, ?, datetime(\'now\'), datetime(\'now\'))',
+                    'INSERT INTO topics (slug, label, configJson, ruleHash, ruleVersion, createdAt, updatedAt)',
+                    'VALUES (?, ?, ?, ?, 1, datetime(\'now\'), datetime(\'now\'))',
                     'ON CONFLICT(slug) DO UPDATE SET',
                     'label = excluded.label,',
                     'configJson = excluded.configJson,',
+                    'ruleVersion = CASE WHEN topics.ruleHash <> excluded.ruleHash THEN topics.ruleVersion + 1 ELSE topics.ruleVersion END,',
+                    'ruleHash = excluded.ruleHash,',
                     'updatedAt = datetime(\'now\')',
                 ].join('\n'),
-                [topic.slug, topic.label, configJson],
+                [topic.slug, topic.label, configJson, ruleHash],
             );
         }
 
@@ -323,22 +331,29 @@ async function saveTopicDefinitionsToDatabase(definitions) {
         } else {
             await run('DELETE FROM topics');
         }
-
-        await run('COMMIT');
-    } catch (err) {
-        try {
-            await run('ROLLBACK');
-        } catch {
-            // keep original error
-        }
-        throw err;
-    }
+        await run(
+            `INSERT INTO app_metadata (key, value, updatedAt) VALUES ('topicRulesVersion', ?, datetime('now'))
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+            [classificationVersion],
+        );
+        await run(
+            `UPDATE articles
+             SET classificationStatus = 'pending', updatedAt = datetime('now')
+             WHERE classificationVersion IS NULL OR classificationVersion <> ?`,
+            [classificationVersion],
+        );
+        await run("UPDATE digest_periods SET dirtyAt = datetime('now'), rulesVersion = ?, updatedAt = datetime('now') WHERE status <> 'closed'", [
+            classificationVersion,
+        ]);
+    });
 
     invalidateTopicCaches();
     return normalized;
 }
 
 export async function ensureTopicDefinitionsInitialized() {
+    const existing = await get('SELECT id FROM topics LIMIT 1');
+    if (existing) return getTopicDefinitions({ force: true });
     try {
         const { definitions } = await readTopicRulesFile();
         await saveTopicDefinitionsToDatabase(definitions);
@@ -402,7 +417,7 @@ export async function getTopicRowsWithMetadata() {
 
 export async function getTopicRulesPayload() {
     const definitions = await getTopicDefinitions({ force: true });
-    const raw = await writeTopicRulesFile(definitions);
+    const raw = `${toStableJson(definitionsToRulesObject(definitions))}\n`;
     return {
         path: TOPIC_RULES_FILE_PATH,
         raw,
@@ -415,7 +430,7 @@ export async function saveTopicsFromJsonInput(jsonInput) {
     const parsed = typeof jsonInput === 'string' ? JSON.parse(jsonInput) : jsonInput;
     const normalized = validateAndNormalizeTopicDefinitions(parsed);
     await saveTopicDefinitionsToDatabase(normalized);
-    const raw = await writeTopicRulesFile(normalized);
+    const raw = `${toStableJson(definitionsToRulesObject(normalized))}\n`;
 
     return {
         raw,
@@ -427,8 +442,14 @@ export async function saveTopicsFromJsonInput(jsonInput) {
 export async function saveTopicsFromDefinitions(definitions) {
     const normalized = validateAndNormalizeTopicDefinitions(definitions);
     await saveTopicDefinitionsToDatabase(normalized);
-    await writeTopicRulesFile(normalized);
     return normalized;
+}
+
+export async function getActiveTopicRulesVersion() {
+    const row = await get("SELECT value FROM app_metadata WHERE key = 'topicRulesVersion'");
+    if (row?.value) return row.value;
+    const definitions = await getTopicDefinitions({ force: true });
+    return hashValue(definitionsToRulesObject(definitions));
 }
 
 function stripHtml(value) {
@@ -729,26 +750,30 @@ export async function replaceArticleTopics(articleId, classification) {
         throw new Error('replaceArticleTopics requires a valid article id');
     }
 
-    await run('DELETE FROM article_topics WHERE articleId = ?', [normalizedArticleId]);
+    const classificationVersion = await getActiveTopicRulesVersion();
 
     const assignedTopics = Array.isArray(classification?.assignedTopics) ? classification.assignedTopics : [];
-    for (const topic of assignedTopics) {
-        const matchedTermsJson = JSON.stringify({
-            confidence: topic.confidence,
-            score: topic.score,
-            distinctMatches: topic.distinctMatches,
-            matchedTerms: topic.matchedTerms,
-        });
-
+    await transaction(async () => {
+        await run('DELETE FROM article_topics WHERE articleId = ?', [normalizedArticleId]);
+        for (const topic of assignedTopics) {
+            const topicRow = await get('SELECT id FROM topics WHERE slug = ?', [topic.slug]);
+            if (!topicRow) continue;
+            const matchedTermsJson = JSON.stringify({
+                confidence: topic.confidence,
+                terms: (topic.matchedTerms || []).map(match => match.term),
+            });
+            await run(
+                `INSERT INTO article_topics
+                 (articleId, topicId, score, matchedTermsJson, classificationVersion, createdAt)
+                 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+                [normalizedArticleId, topicRow.id, topic.score, matchedTermsJson, classificationVersion],
+            );
+        }
         await run(
-            [
-                'INSERT OR REPLACE INTO article_topics',
-                '(articleId, topicSlug, score, matchedTermsJson, createdAt)',
-                'VALUES (?, ?, ?, ?, datetime(\'now\'))',
-            ].join('\n'),
-            [normalizedArticleId, topic.slug, topic.score, matchedTermsJson],
+            `UPDATE articles SET classificationVersion = ?, classificationStatus = 'ready', updatedAt = datetime('now') WHERE id = ?`,
+            [classificationVersion, normalizedArticleId],
         );
-    }
+    });
 }
 
 export async function classifyAndPersistArticleTopics(article) {
@@ -780,15 +805,15 @@ export async function getArticleTopics(articleId) {
     const rows = await all(
         [
             'SELECT article_topics.articleId,',
-            'article_topics.topicSlug,',
+            'topics.slug AS topicSlug,',
             'article_topics.score,',
             'article_topics.matchedTermsJson,',
             'article_topics.createdAt,',
             'topics.label',
             'FROM article_topics',
-            'JOIN topics ON topics.slug = article_topics.topicSlug',
+            'JOIN topics ON topics.id = article_topics.topicId',
             'WHERE article_topics.articleId = ?',
-            'ORDER BY article_topics.score DESC, article_topics.topicSlug ASC',
+            'ORDER BY article_topics.score DESC, topics.slug ASC',
         ].join('\n'),
         [normalizedArticleId],
     );
@@ -813,46 +838,38 @@ export async function getArticleTopics(articleId) {
 
 export async function reprocessTopicClassificationForAllArticles() {
     const definitions = await getTopicDefinitions({ force: true });
-    const allArticles = await all('SELECT id, title, teaser, content FROM articles ORDER BY id ASC');
+    const classificationVersion = await getActiveTopicRulesVersion();
 
     const counters = {
         processed: 0,
         assignedArticles: 0,
         topicAssignments: 0,
+        failed: 0,
     };
+    let lastArticleId = 0;
 
-    await run('BEGIN IMMEDIATE');
-    try {
-        await run('DELETE FROM article_topics');
+    while (true) {
+        const articles = await all(
+            `SELECT id, title, teaser, content FROM articles
+             WHERE id > ? AND (classificationStatus <> 'ready' OR classificationVersion IS NULL OR classificationVersion <> ?)
+             ORDER BY id ASC LIMIT 250`,
+            [lastArticleId, classificationVersion],
+        );
+        if (articles.length === 0) break;
+        for (const article of articles) {
+            lastArticleId = Number(article.id);
+            try {
+                const classification = await classifyArticleTopics(article, { definitions });
+                const assignedTopics = classification.assignedTopics || [];
 
-        for (const article of allArticles) {
-            const classification = await classifyArticleTopics(article, { definitions });
-            const assignedTopics = classification.assignedTopics || [];
+                if (assignedTopics.length > 0) counters.assignedArticles += 1;
 
-            if (assignedTopics.length > 0) {
-                counters.assignedArticles += 1;
-            }
-
-            for (const topic of assignedTopics) {
-                counters.topicAssignments += 1;
-                await run(
-                    [
-                        'INSERT OR REPLACE INTO article_topics',
-                        '(articleId, topicSlug, score, matchedTermsJson, createdAt)',
-                        'VALUES (?, ?, ?, ?, datetime(\'now\'))',
-                    ].join('\n'),
-                    [
-                        article.id,
-                        topic.slug,
-                        topic.score,
-                        JSON.stringify({
-                            confidence: topic.confidence,
-                            score: topic.score,
-                            distinctMatches: topic.distinctMatches,
-                            matchedTerms: topic.matchedTerms,
-                        }),
-                    ],
-                );
+                counters.topicAssignments += assignedTopics.length;
+                await replaceArticleTopics(article.id, classification);
+            } catch (error) {
+                counters.failed += 1;
+                await run("UPDATE articles SET classificationStatus = 'failed', updatedAt = datetime('now') WHERE id = ?", [article.id]);
+                logWarn('Topic reprocess article failed', { articleId: article.id, error: error.message });
             }
 
             counters.processed += 1;
@@ -863,15 +880,6 @@ export async function reprocessTopicClassificationForAllArticles() {
                 });
             }
         }
-
-        await run('COMMIT');
-    } catch (err) {
-        try {
-            await run('ROLLBACK');
-        } catch {
-            // keep original error
-        }
-        throw err;
     }
 
     logInfo('Topic reprocess complete', {
@@ -882,7 +890,7 @@ export async function reprocessTopicClassificationForAllArticles() {
 
     return {
         ...counters,
-        totalArticles: allArticles.length,
+        totalArticles: Number((await get('SELECT COUNT(*) AS count FROM articles'))?.count || 0),
         topicCount: definitions.length,
     };
 }

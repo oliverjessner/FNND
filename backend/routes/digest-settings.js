@@ -2,8 +2,14 @@ import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
 import { publish } from '../services/events.js';
+import { generateDirtyDigestPeriods, markAllDigestPeriodsDirty } from '../services/digest-store.js';
+import { logWarn } from '../utils/logger.js';
 
 const router = express.Router();
+
+function rebuildDirtyDigests() {
+    void generateDirtyDigestPeriods().catch(error => logWarn('Digest rebuild after settings change failed', { error: error.message }));
+}
 
 function normalizeFeedIds(value) {
     if (!Array.isArray(value)) {
@@ -82,6 +88,9 @@ router.put('/excluded-feeds', auth, async ({ body }, res) => {
         throw err;
     }
 
+    await markAllDigestPeriodsDirty();
+    rebuildDirtyDigests();
+
     publish('digest.settings.updated', { type: 'excluded-feeds', total: validFeedIds.length });
 
     return res.json(await getDigestSettingsPayload());
@@ -109,6 +118,11 @@ router.post('/blocked-words', auth, async ({ body }, res) => {
         [word],
     );
 
+    if (Number(result?.changes || 0) > 0) {
+        await markAllDigestPeriodsDirty();
+        rebuildDirtyDigests();
+    }
+
     publish('digest.settings.updated', {
         type: 'blocked-words',
         action: Number(result?.changes || 0) > 0 ? 'added' : 'exists',
@@ -133,6 +147,9 @@ router.delete('/blocked-words/:id', auth, async ({ params: { id } }, res) => {
     if (Number(result?.changes || 0) === 0) {
         return res.status(404).json({ error: 'Blocked word not found' });
     }
+
+    await markAllDigestPeriodsDirty();
+    rebuildDirtyDigests();
 
     publish('digest.settings.updated', { type: 'blocked-words', action: 'deleted', id: blockedWordId });
 

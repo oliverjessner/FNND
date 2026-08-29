@@ -1,8 +1,9 @@
 import { queryArticles } from '../backend/services/article-queries.js';
-import { buildDigestPayload } from '../backend/services/digest-payload.js';
+import { readStoredDigestPayload } from '../backend/services/digest-reader.js';
 import { parseCliArgs, getHelpText } from './lib/arguments.js';
+import { chooseArticle as chooseArticleInteractively } from './lib/choose.js';
 import { discoverDatabasePath } from './lib/database-path.js';
-import { formatDigest, formatLastArticles } from './lib/output.js';
+import { formatChosenArticle, formatDigest, formatLastArticles } from './lib/output.js';
 import { openReadOnlyDatabase } from './lib/read-only-database.js';
 
 function writeLine(stream, value) {
@@ -21,12 +22,14 @@ export async function runCli(
     {
         stdout = process.stdout,
         stderr = process.stderr,
+        stdin = process.stdin,
         cwd = process.cwd(),
         env = process.env,
         platform = process.platform,
         homeDir,
         discoverDatabase = discoverDatabasePath,
         openDatabase = openReadOnlyDatabase,
+        chooseArticle = chooseArticleInteractively,
     } = {},
 ) {
     let database;
@@ -40,6 +43,8 @@ export async function runCli(
 
         const databasePath = await discoverDatabase({ cwd, env, platform, homeDir });
         database = await openDatabase(databasePath);
+        const schema = await database.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'digest_periods'");
+        if (!schema) throw new Error('Database schema v2 is required; use data-v2.db or restore the legacy archive separately.');
 
         if (command.command === 'articles-last') {
             const articles = await queryArticles(
@@ -52,9 +57,14 @@ export async function runCli(
                 },
                 database,
             );
-            writeResult(stdout, formatLastArticles(articles, command));
+            if (command.choose) {
+                const selectedArticle = await chooseArticle(articles, { input: stdin, output: stderr });
+                writeResult(stdout, formatChosenArticle(selectedArticle, command));
+            } else {
+                writeResult(stdout, formatLastArticles(articles, command));
+            }
         } else {
-            const payload = await buildDigestPayload(command.variant, database);
+            const payload = await readStoredDigestPayload(command.variant, database);
             writeResult(stdout, formatDigest(payload, command.count));
         }
     } catch (error) {

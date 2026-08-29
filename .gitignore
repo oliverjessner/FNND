@@ -6,6 +6,10 @@ node_modules
 data.db
 *.db
 *.sqlite
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
 dist
 build/
 !electron/build/

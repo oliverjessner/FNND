@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import express from 'express';
-import { get, run } from '../database/datenbank.js';
+import { get } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
 import { publish } from '../services/events.js';
-import { classifyAndPersistArticleTopics } from '../services/topics.js';
+import { ingestArticle } from '../services/article-ingest.js';
+import { ensureRebuildWindowDigestPeriods, generateDirtyDigestPeriods } from '../services/digest-store.js';
 import { logWarn } from '../utils/logger.js';
 
 const router = express.Router();
@@ -148,36 +149,29 @@ router.post('/articles', auth, async (req, res) => {
         const guidOrHash = createGuidOrHash(item || {}, feedId, publishedAt);
 
         try {
-            const result = await run(
-                `INSERT OR IGNORE INTO articles
-                 (feedId, title, teaser, content, url, publishedAt, guidOrHash)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [feedId, item?.title || null, teaser, content, item?.url || null, publishedAt, guidOrHash],
-            );
+            const result = await ingestArticle({
+                feedId,
+                externalId: guidOrHash,
+                title: item?.title,
+                teaser,
+                content,
+                url: item?.url,
+                publishedAt,
+            });
 
-            if (result.changes > 0) {
+            if (result.inserted) {
                 inserted += 1;
-                try {
-                    await classifyAndPersistArticleTopics({
-                        id: result.lastID,
-                        title: item?.title || null,
-                        teaser,
-                        content,
-                    });
-                } catch (classificationError) {
-                    logWarn('Webhook topic classification failed', {
-                        articleId: result.lastID,
-                        feedId,
-                        error: classificationError.message,
-                    });
-                }
             } else {
                 ignored += 1;
             }
-        } catch {
+        } catch (error) {
+            logWarn('Webhook article persistence failed', { feedId, error: error.message });
             invalid += 1;
         }
     }
+
+    await ensureRebuildWindowDigestPeriods();
+    await generateDirtyDigestPeriods();
 
     publish('articles.updated', { source: 'webhook', inserted, ignored, invalid, received: items.length });
     publish('webhook.articles.received', { inserted, ignored, invalid, received: items.length });

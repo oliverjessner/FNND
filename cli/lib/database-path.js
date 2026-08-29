@@ -17,8 +17,8 @@ async function findRepositoryDatabase(cwd) {
         try {
             const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
             if (packageJson?.name === 'no-bullshit-rss') {
-                const candidate = path.join(directory, 'data.db');
-                return (await isFile(candidate)) ? candidate : null;
+                const v2Candidate = path.join(directory, 'data-v2.db');
+                return (await isFile(v2Candidate)) ? v2Candidate : null;
             }
         } catch {
             // Keep walking until the filesystem root.
@@ -34,15 +34,15 @@ async function findRepositoryDatabase(cwd) {
 
 export function getElectronDatabasePath({ platform = process.platform, env = process.env, homeDir = os.homedir() } = {}) {
     if (platform === 'darwin') {
-        return path.join(homeDir, 'Library', 'Application Support', 'NO-BULLSHIT-RSS', 'data.db');
+        return path.join(homeDir, 'Library', 'Application Support', 'NO-BULLSHIT-RSS', 'data-v2.db');
     }
     if (platform === 'win32') {
         const appData = env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
-        return path.join(appData, 'NO-BULLSHIT-RSS', 'data.db');
+        return path.join(appData, 'NO-BULLSHIT-RSS', 'data-v2.db');
     }
 
     const configDirectory = env.XDG_CONFIG_HOME || path.join(homeDir, '.config');
-    return path.join(configDirectory, 'NO-BULLSHIT-RSS', 'data.db');
+    return path.join(configDirectory, 'NO-BULLSHIT-RSS', 'data-v2.db');
 }
 
 export async function discoverDatabasePath({ cwd = process.cwd(), env = process.env, platform, homeDir } = {}) {

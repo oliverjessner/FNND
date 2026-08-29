@@ -40,6 +40,16 @@ Without a projection flag, the command returns compact JSON:
 no-bullshit-rss articles last 10
 ```
 
+Interactively choose one of the newest articles with the arrow keys or `j`/`k`, then confirm with Enter:
+
+```bash
+no-bullshit-rss articles last 10 --choose --url
+no-bullshit-rss articles last 10 --choose --title
+no-bullshit-rss articles last 10 --choose --url --title
+```
+
+The selector is rendered on stderr and only the selected result is written to stdout. `Esc`, `q`, or `Ctrl+C` cancels the selection. Without `--url` or `--title`, the selected article is returned as one compact JSON object.
+
 Articles are ordered by `publishedAt DESC, id DESC`.
 
 ## Digests
@@ -59,8 +69,8 @@ If no range is provided, the daily digest is used. The result is a JSON array co
 The CLI resolves the existing database in this order:
 
 1. An existing file specified by `DB_PATH`.
-2. `data.db` in the current NO-BULLSHIT-RSS repository.
-3. The installed Electron app's `NO-BULLSHIT-RSS/data.db` user-data directory on macOS, Windows, or Linux.
+2. `data-v2.db` in the current NO-BULLSHIT-RSS repository.
+3. The installed Electron app's `NO-BULLSHIT-RSS/data-v2.db` user-data directory on macOS, Windows, or Linux.
 
 If no existing database is found, the CLI exits with an error. It never creates an empty database.
 

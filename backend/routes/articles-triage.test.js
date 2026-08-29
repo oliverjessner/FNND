@@ -9,38 +9,42 @@ process.env.DB_PATH = path.join(testDirectory, 'triage.db');
 
 const database = await import('../database/datenbank.js');
 const { setArticleDismissedState, setArticlesDigestedStateInTransaction } = await import('./articles.js');
+const { ingestArticle } = await import('../services/article-ingest.js');
+const { generateDirtyDigestPeriods } = await import('../services/digest-store.js');
 
 await database.initSchema();
 await database.run(
-    "INSERT INTO feeds (name, websiteUrl, feedUrl) VALUES ('Test source', 'https://example.com', 'https://example.com/rss')",
+    `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+     VALUES ('Test source', 'https://example.com', 'https://example.com/', datetime('now'), datetime('now'))`,
 );
 await database.run(
-    `INSERT INTO articles (feedId, title, teaser, url, publishedAt, guidOrHash)
-     VALUES (1, 'Test article', 'A useful summary', 'https://example.com/article', datetime('now'), 'test-guid')`,
+    "INSERT INTO feeds (sourceId, feedUrl, createdAt, updatedAt) VALUES (1, 'https://example.com/rss', datetime('now'), datetime('now'))",
 );
-await database.run("INSERT INTO lists (name, description, color) VALUES ('Saved', '', '#111111')");
-await database.run('INSERT INTO list_items (listId, articleId) VALUES (1, 1)');
+await ingestArticle({ feedId: 1, externalId: 'test-guid', title: 'Test article', teaser: 'A useful summary', url: 'https://example.com/article' });
+await generateDirtyDigestPeriods();
+await database.run("INSERT INTO lists (name, description, color, createdAt, updatedAt) VALUES ('Saved', '', '#111111', datetime('now'), datetime('now'))");
+await database.run("INSERT INTO list_items (listId, articleId, createdAt) VALUES (1, 1, datetime('now'))");
 
 test('persists saved, dismissed and digested triage states with undo', async () => {
     const initial = await database.get(
-        `SELECT articles.dismissedAt,
+        `SELECT article_state.dismissedAt,
          EXISTS (SELECT 1 FROM list_items WHERE list_items.articleId = articles.id) AS saved
-         FROM articles WHERE articles.id = 1`,
+         FROM articles JOIN article_state ON article_state.articleId = articles.id WHERE articles.id = 1`,
     );
     assert.equal(initial.saved, 1);
     assert.equal(initial.dismissedAt, null);
 
     assert.equal(await setArticleDismissedState(1, true), true);
-    assert.equal(Number((await database.get('SELECT COUNT(*) AS total FROM articles WHERE dismissedAt IS NULL')).total), 0);
+    assert.equal(Number((await database.get('SELECT COUNT(*) AS total FROM article_state WHERE dismissedAt IS NULL')).total), 0);
 
     assert.equal(await setArticleDismissedState(1, false), true);
-    assert.equal(Number((await database.get('SELECT COUNT(*) AS total FROM articles WHERE dismissedAt IS NULL')).total), 1);
+    assert.equal(Number((await database.get('SELECT COUNT(*) AS total FROM article_state WHERE dismissedAt IS NULL')).total), 1);
 
     await setArticlesDigestedStateInTransaction([1], true);
-    assert.equal(Number((await database.get('SELECT dailyDigested FROM articles WHERE id = 1')).dailyDigested), 1);
+    assert.equal(Number((await database.get('SELECT COUNT(*) AS total FROM digest_cluster_state WHERE completedAt IS NOT NULL')).total), 1);
 
     await setArticlesDigestedStateInTransaction([1], false);
-    assert.equal(Number((await database.get('SELECT dailyDigested FROM articles WHERE id = 1')).dailyDigested), 0);
+    assert.equal(Number((await database.get('SELECT COUNT(*) AS total FROM digest_cluster_state WHERE completedAt IS NOT NULL')).total), 0);
 });
 
 test.after(async () => {

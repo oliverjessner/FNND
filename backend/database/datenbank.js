@@ -4,49 +4,107 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', '..', 'data.db');
+export const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', '..', 'data-v2.db');
+const BUSY_TIMEOUT_MS = Math.max(1_000, Number(process.env.SQLITE_BUSY_TIMEOUT_MS) || 5_000);
 const db = new sqlite3.Database(DB_PATH);
 
-db.serialize(() => db.run('PRAGMA foreign_keys = ON'));
+db.serialize(() => {
+    db.run('PRAGMA foreign_keys = ON');
+    db.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+});
+
+function isBusyError(error) {
+    return error?.code === 'SQLITE_BUSY' || error?.code === 'SQLITE_LOCKED';
+}
+
+function withBusyRetry(operation, attempt = 0) {
+    return operation().catch(error => {
+        if (!isBusyError(error) || attempt >= 4) throw error;
+        const delayMs = 20 * 2 ** attempt;
+        return new Promise(resolve => setTimeout(resolve, delayMs)).then(() => withBusyRetry(operation, attempt + 1));
+    });
+}
 
 export function run(sql, params = []) {
+    return withBusyRetry(
+        () =>
+            new Promise((resolve, reject) => {
+                db.run(sql, params, function (err) {
+                    if (err) return reject(err);
+                    resolve({ lastID: this.lastID, changes: this.changes });
+                });
+            }),
+    );
+}
+
+export function exec(sql) {
+    return withBusyRetry(
+        () =>
+            new Promise((resolve, reject) => {
+                db.exec(sql, err => {
+                    if (err) return reject(err);
+                    resolve();
+                });
+            }),
+    );
+}
+
+export async function transaction(callback, { mode = 'IMMEDIATE' } = {}) {
+    await run(`BEGIN ${mode}`);
+    try {
+        const result = await callback({ run, get, all });
+        await run('COMMIT');
+        return result;
+    } catch (error) {
+        try {
+            await run('ROLLBACK');
+        } catch {
+            // Preserve the operation error.
+        }
+        throw error;
+    }
+}
+
+export function closeDatabase() {
     return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve({ lastID: this.lastID, changes: this.changes });
+        db.close(error => {
+            if (error) reject(error);
+            else resolve();
         });
     });
 }
 
 export function get(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) return reject(err);
-            resolve(row);
-        });
-    });
+    return withBusyRetry(
+        () =>
+            new Promise((resolve, reject) => {
+                db.get(sql, params, (err, row) => {
+                    if (err) return reject(err);
+                    resolve(row);
+                });
+            }),
+    );
 }
 
 export function all(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.all(sql, params, (err, rows) => {
-            if (err) return reject(err);
-            resolve(rows);
-        });
-    });
-}
-
-function execSql(sql) {
-    return new Promise((resolve, reject) => {
-        db.exec(sql, err => {
-            if (err) return reject(err);
-            resolve();
-        });
-    });
+    return withBusyRetry(
+        () =>
+            new Promise((resolve, reject) => {
+                db.all(sql, params, (err, rows) => {
+                    if (err) return reject(err);
+                    resolve(rows);
+                });
+            }),
+    );
 }
 
 export async function initSchema() {
-    const migrationsDir = path.join(__dirname, '..', '..', 'migrations');
+    await get('PRAGMA journal_mode = WAL');
+    await run('PRAGMA synchronous = NORMAL');
+    await run('PRAGMA foreign_keys = ON');
+    await run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+
+    const migrationsDir = path.join(__dirname, '..', '..', 'migrations-v2');
     const migrationFiles = (await readdir(migrationsDir))
         .filter(file => /^\d+_.+\.sql$/u.test(file))
         .sort((left, right) => left.localeCompare(right));
@@ -65,9 +123,13 @@ export async function initSchema() {
         }
 
         const migrationSql = await readFile(path.join(migrationsDir, file), 'utf-8');
-        await execSql(migrationSql);
-        await run('INSERT INTO schema_migrations (version, appliedAt) VALUES (?, datetime(\'now\'))', [file]);
+        await transaction(async () => {
+            await exec(migrationSql);
+            await run('INSERT INTO schema_migrations (version, appliedAt) VALUES (?, datetime(\'now\'))', [file]);
+        });
     }
+
+    await run('PRAGMA optimize');
 }
 
 export default db;

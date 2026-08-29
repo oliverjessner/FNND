@@ -58,7 +58,7 @@ function waitForServer(port, attempts = 40, delayMs = 250) {
 
 function startServer() {
     const serverPath = path.join(__dirname, '..', 'backend', 'server.js');
-    const dbPath = path.join(app.getPath('userData'), 'data.db');
+    const dbPath = path.join(app.getPath('userData'), 'data-v2.db');
     const topicRulesPath = path.join(app.getPath('userData'), 'topics.rules.json');
     const appPath = app.getAppPath();
 
@@ -223,6 +223,12 @@ async function createWindow() {
 
     mainWindow = win;
 
+    win.on('closed', () => {
+        if (mainWindow === win) {
+            mainWindow = null;
+        }
+    });
+
     if (process.platform === 'darwin' && app.dock && appIcon) {
         app.dock.setIcon(appIcon);
     }
@@ -260,6 +266,23 @@ async function createWindow() {
 
     await waitForServer(PORT);
     await win.loadURL(`http://127.0.0.1:${PORT}`);
+}
+
+async function showOrCreateMainWindow() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) {
+            mainWindow.restore();
+        }
+        mainWindow.show();
+        mainWindow.focus();
+        return;
+    }
+
+    await createWindow();
+}
+
+function handleWindowRestoreError(err) {
+    dialog.showErrorBox('Startup error', err?.message || String(err));
 }
 
 function createAboutWindow() {
@@ -411,23 +434,22 @@ function buildAppMenu() {
 }
 
 app.on('second-instance', () => {
-    if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-            mainWindow.restore();
-        }
-        mainWindow.focus();
-    }
+    showOrCreateMainWindow().catch(handleWindowRestoreError);
 });
 
 app.whenReady().then(async () => {
     buildAppMenu();
     startServer();
     try {
-        await createWindow();
+        await showOrCreateMainWindow();
     } catch (err) {
         dialog.showErrorBox('Startup error', err.message);
         app.quit();
     }
+});
+
+app.on('activate', () => {
+    showOrCreateMainWindow().catch(handleWindowRestoreError);
 });
 
 app.on('window-all-closed', () => {

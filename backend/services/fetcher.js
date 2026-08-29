@@ -1,7 +1,7 @@
 import Parser from 'rss-parser';
-import crypto from 'node:crypto';
-import { all, run } from '../database/datenbank.js';
-import { classifyAndPersistArticleTopics } from './topics.js';
+import { all } from '../database/datenbank.js';
+import { ingestArticle } from './article-ingest.js';
+import { ensureRebuildWindowDigestPeriods, generateDirtyDigestPeriods } from './digest-store.js';
 import { logInfo, logWarn, logError } from '../utils/logger.js';
 import { publish } from './events.js';
 import { decodeBuffer, detectEncoding } from '../utils/encoding.js';
@@ -17,38 +17,6 @@ let lastFetchStatus = {
 
 export function getLastFetchStatus() {
     return lastFetchStatus;
-}
-
-function toIsoDate(value) {
-    if (!value) return null;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toISOString();
-}
-
-function normalizeTeaser(text, maxLen = 220) {
-    if (!text) return null;
-    const cleaned = text
-        .replace(/<[^>]*>/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    if (cleaned.length <= maxLen) return cleaned;
-    return `${cleaned.slice(0, maxLen - 1)}…`;
-}
-
-function normalizeContent(text, maxLen = 10000) {
-    if (!text) return null;
-    const cleaned = String(text)
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    if (!cleaned) return null;
-    if (cleaned.length <= maxLen) return cleaned;
-    return cleaned.slice(0, maxLen);
-}
-
-function hashUrl(url) {
-    return crypto.createHash('sha256').update(url).digest('hex');
 }
 
 async function fetchWithRetry(url, { timeoutMs = 10000, retries = 2 } = {}) {
@@ -90,51 +58,30 @@ export async function updateAllFeeds() {
                 const xml = await fetchWithRetry(feed.feedUrl, { timeoutMs: 10000, retries: 2 });
                 const parsed = await parser.parseString(xml);
                 let newCount = 0;
+                const fetchedAt = new Date().toISOString();
 
                 for (const item of parsed.items || []) {
                     const url = item.link || item.id || null;
-                    const guid = item.guid || item.id || url || '';
-                    const guidOrHash = guid ? String(guid) : url ? hashUrl(url) : null;
-                    const publishedAt = toIsoDate(item.isoDate || item.pubDate || item.published);
-                    const teaser = normalizeTeaser(
-                        item.contentSnippet || item.summary || item.content || item.description,
-                    );
-                    const content = normalizeContent(
-                        item['content:encoded'] || item.content || item.summary || item.description,
-                    );
+                    const externalId = item.guid || item.id || url;
 
-                    if (!guidOrHash) {
+                    if (!externalId) {
                         continue;
                     }
 
                     try {
-                        const result = await run(
-                            `INSERT OR IGNORE INTO articles
-              (feedId, title, teaser, content, url, publishedAt, guidOrHash)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                            [feed.id, item.title || null, teaser, content, url, publishedAt, guidOrHash],
-                        );
-
-                        if (result.changes > 0) {
-                            newCount += 1;
-
-                            try {
-                                await classifyAndPersistArticleTopics({
-                                    id: result.lastID,
-                                    title: item.title || null,
-                                    teaser,
-                                    content,
-                                });
-                            } catch (classificationError) {
-                                logWarn('Topic classification failed', {
-                                    articleId: result.lastID,
-                                    feedId: feed.id,
-                                    error: classificationError.message,
-                                });
-                            }
-                        }
+                        const result = await ingestArticle({
+                            feedId: feed.id,
+                            externalId,
+                            title: item.title,
+                            teaser: item.contentSnippet || item.summary || item.content || item.description,
+                            content: item['content:encoded'] || item.content || item.summary || item.description,
+                            url,
+                            publishedAt: item.isoDate || item.pubDate || item.published,
+                            fetchedAt,
+                        });
+                        if (result.inserted) newCount += 1;
                     } catch (err) {
-                        return logWarn('Article insert failed', {
+                        logWarn('Article persistence failed', {
                             feedId: feed.id,
                             error: err.message,
                             url: feed.feedUrl,
@@ -146,7 +93,7 @@ export async function updateAllFeeds() {
 
                 logInfo('Feed updated', { feedId: feed.id, newCount, ms: Date.now() - feedStart });
             } catch (err) {
-                return logError('Feed failed', {
+                logError('Feed failed', {
                     feedId: feed.id,
                     error: err.message,
                     ms: Date.now() - feedStart,
@@ -154,6 +101,8 @@ export async function updateAllFeeds() {
                 });
             }
         }
+        await ensureRebuildWindowDigestPeriods();
+        await generateDirtyDigestPeriods();
     } catch (err) {
         errorMessage = err.message;
         throw err;
@@ -166,6 +115,6 @@ export async function updateAllFeeds() {
         };
 
         logInfo('Fetch run finished', { totalNew, ms: Date.now() - start });
-        return publish('fetch.completed', { ...lastFetchStatus });
+        publish('fetch.completed', { ...lastFetchStatus });
     }
 }

@@ -1,7 +1,7 @@
 const HELP_TEXT = `NO BULLSHIT RSS CLI
 
 Usage:
-  no-bullshit-rss articles last <count> [--url] [--title|--titles]
+  no-bullshit-rss articles last <count> [--choose] [--url] [--title|--titles]
   no-bullshit-rss articles digest <count> [--daily|--weekly|--monthly]
 
 Commands:
@@ -11,6 +11,7 @@ Commands:
 Options:
   --url                      Print one URL per line
   --title, --titles          Print one title per line
+  --choose                   Interactively choose one of the newest articles
   --daily                    Use today's digest (default)
   --weekly                   Use this week's digest
   --monthly                  Use this month's digest
@@ -23,6 +24,7 @@ Examples:
   no-bullshit-rss articles last 10 --url
   no-bullshit-rss articles last 10 --title
   no-bullshit-rss articles last 10 --url --title
+  no-bullshit-rss articles last 10 --choose --url
   no-bullshit-rss articles digest 10 --daily
   no-bullshit-rss articles digest 10 --weekly
   no-bullshit-rss articles digest 10 --monthly`;
@@ -69,12 +71,13 @@ export function parseCliArgs(argv) {
 
     const count = parseCount(countValue);
     if (action === 'last') {
-        rejectUnknownFlags(flags, new Set(['--url', '--title', '--titles']));
+        rejectUnknownFlags(flags, new Set(['--url', '--title', '--titles', '--choose']));
         return {
             command: 'articles-last',
             count,
             url: flags.includes('--url'),
             title: flags.includes('--title') || flags.includes('--titles'),
+            choose: flags.includes('--choose'),
         };
     }
 

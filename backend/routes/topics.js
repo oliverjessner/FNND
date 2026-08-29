@@ -17,8 +17,25 @@ import {
     upsertTopic,
     validateAndNormalizeTopicDefinitions,
 } from '../services/topics.js';
+import { generateDirtyDigestPeriods } from '../services/digest-store.js';
+import { logWarn } from '../utils/logger.js';
 
 const router = express.Router();
+let scheduledReprocess = null;
+
+function scheduleStaleReprocess() {
+    if (scheduledReprocess) return;
+    scheduledReprocess = reprocessTopicClassificationForAllArticles()
+        .then(async result => {
+            publish('topics.reprocessed', result);
+            publish('articles.updated', { source: 'topic-reprocess', ...result });
+            await generateDirtyDigestPeriods();
+        })
+        .catch(error => logWarn('Automatic topic reprocess failed', { error: error.message }))
+        .finally(() => {
+            scheduledReprocess = null;
+        });
+}
 
 function parseTopicPayload(body = {}) {
     return {
@@ -83,6 +100,7 @@ router.put('/rules', auth, async ({ body }, res) => {
             source: 'rules',
             topicCount: result.topics.length,
         });
+        scheduleStaleReprocess();
 
         return res.json({
             ok: true,
@@ -98,6 +116,7 @@ router.post('/', auth, async ({ body }, res) => {
     try {
         const topic = await upsertTopic(parseTopicPayload(body));
         publish('topics.updated', { source: 'create', slug: topic.slug });
+        scheduleStaleReprocess();
         return res.status(201).json({ ok: true, topic });
     } catch (err) {
         return res.status(400).json({ error: err.message || 'Could not create topic' });
@@ -125,6 +144,7 @@ router.put('/:slug', auth, async ({ params, body }, res) => {
     try {
         const topic = await upsertTopic(payload, { existingSlug: currentSlug });
         publish('topics.updated', { source: 'update', slug: currentSlug, nextSlug: topic.slug });
+        scheduleStaleReprocess();
         return res.json({ ok: true, topic });
     } catch (err) {
         return res.status(400).json({ error: err.message || 'Could not update topic' });
@@ -147,6 +167,7 @@ router.delete('/:slug', auth, async ({ params }, res) => {
     }
 
     publish('topics.updated', { source: 'delete', slug });
+    scheduleStaleReprocess();
     return res.status(204).end();
 });
 
