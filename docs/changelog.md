@@ -1,3 +1,7 @@
+## 1.0.2
+
+- search in cli
+
 ## 1.0.1
 
 - improvements on the cli adding rss, topics, lists

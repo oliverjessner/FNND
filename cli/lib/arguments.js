@@ -5,6 +5,7 @@ Usage:
   no-bullshit-rss topics
   no-bullshit-rss lists [--list <name>]
   no-bullshit-rss articles last <count> [--choose] [--url] [--title|--titles]
+  no-bullshit-rss articles search <count> (--title|--url) <text>
   no-bullshit-rss articles digest <count> [--daily|--weekly|--monthly]
 
 Commands:
@@ -13,6 +14,7 @@ Commands:
   lists                      Show all stored lists
   lists --list <name>        Show all articles in a named list
   articles last <count>      Show the newest stored articles
+  articles search <count>    Search stored article titles or URLs
   articles digest <count>    Show the newest digest clusters as JSON
 
 Options:
@@ -38,6 +40,8 @@ Examples:
   no-bullshit-rss articles last 10 --title
   no-bullshit-rss articles last 10 --url --title
   no-bullshit-rss articles last 10 --choose --url
+  no-bullshit-rss articles search 10 --title "nvidia"
+  no-bullshit-rss articles search 10 --url "nvidia"
   no-bullshit-rss articles digest 10 --daily
   no-bullshit-rss articles digest 10 --weekly
   no-bullshit-rss articles digest 10 --monthly`;
@@ -97,7 +101,7 @@ export function parseCliArgs(argv) {
     if (resource !== 'articles') {
         throw new Error(`Unknown resource: ${resource || '(missing)'}`);
     }
-    if (!['last', 'digest'].includes(action)) {
+    if (!['last', 'search', 'digest'].includes(action)) {
         throw new Error(`Unknown articles command: ${action || '(missing)'}`);
     }
     if (countValue === undefined || countValue.startsWith('--')) {
@@ -113,6 +117,24 @@ export function parseCliArgs(argv) {
             url: flags.includes('--url'),
             title: flags.includes('--title') || flags.includes('--titles'),
             choose: flags.includes('--choose'),
+        };
+    }
+
+    if (action === 'search') {
+        const fieldFlag = flags[0];
+        const searchText = flags[1];
+        if (!['--title', '--url'].includes(fieldFlag)) {
+            throw new Error('Search requires exactly one of --title or --url.');
+        }
+        if (!searchText || !searchText.trim() || searchText.startsWith('--')) {
+            throw new Error(`Missing search text after ${fieldFlag}.`);
+        }
+        if (flags.length > 2) throw new Error(`Unknown option: ${flags[2]}`);
+        return {
+            command: 'articles-search',
+            count,
+            field: fieldFlag === '--title' ? 'title' : 'url',
+            text: searchText.trim(),
         };
     }
 

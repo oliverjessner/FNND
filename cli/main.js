@@ -59,6 +59,20 @@ export async function runCli(
             writeResult(stdout, formatLastArticles(await readStoredListArticles(database, command.listName)));
         } else if (command.command === 'lists') {
             writeResult(stdout, JSON.stringify(await readStoredLists(database), null, 2));
+        } else if (command.command === 'articles-search') {
+            const articles = await queryArticles(
+                {
+                    limit: command.count,
+                    offset: 0,
+                    activeOnly: false,
+                    includeTopics: false,
+                    maxLimit: null,
+                    titleContains: command.field === 'title' ? command.text : null,
+                    urlContains: command.field === 'url' ? command.text : null,
+                },
+                database,
+            );
+            writeResult(stdout, formatLastArticles(articles));
         } else if (command.command === 'articles-last') {
             const articles = await queryArticles(
                 {

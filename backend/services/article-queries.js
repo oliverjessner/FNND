@@ -77,6 +77,8 @@ export async function queryArticles(
         listId,
         topic,
         query,
+        titleContains,
+        urlContains,
         limit = 100,
         offset = 0,
         activeOnly = true,
@@ -118,6 +120,14 @@ export async function queryArticles(
             whereParts.push('articles.id IN (SELECT rowid FROM articles_fts WHERE articles_fts MATCH ?)');
             params.push(terms.slice(0, 12).map(term => `"${term.replace(/"/g, '""')}"*`).join(' AND '));
         }
+    }
+    if (titleContains) {
+        whereParts.push("instr(lower(coalesce(articles.title, '')), lower(?)) > 0");
+        params.push(String(titleContains));
+    }
+    if (urlContains) {
+        whereParts.push("instr(lower(coalesce(articles.url, '')), lower(?)) > 0");
+        params.push(String(urlContains));
     }
     if (activeOnly) {
         whereParts.push('article_state.dismissedAt IS NULL');

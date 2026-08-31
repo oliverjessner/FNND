@@ -67,6 +67,22 @@ The selector is rendered on stderr and only the selected result is written to st
 
 Articles are ordered by `publishedAt DESC, id DESC`.
 
+## Search articles
+
+Search the newest stored articles whose title contains text. Matching is case-insensitive:
+
+```bash
+no-bullshit-rss articles search 10 --title "nvidia"
+```
+
+Search the newest stored articles whose URL contains text:
+
+```bash
+no-bullshit-rss articles search 10 --url "nvidia"
+```
+
+The number is the maximum result count. Results use the same compact JSON format and ordering as `articles last`.
+
 ## Stored RSS feeds
 
 Return all stored feeds with their names, feed URLs, and website URLs as JSON:

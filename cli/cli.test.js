@@ -98,6 +98,18 @@ test('parses article projections and digest ranges', () => {
     assert.deepEqual(parseCliArgs(['topics']), { command: 'topics' });
     assert.deepEqual(parseCliArgs(['lists']), { command: 'lists', listName: null });
     assert.deepEqual(parseCliArgs(['lists', '--list', ' nvidia ']), { command: 'lists', listName: 'nvidia' });
+    assert.deepEqual(parseCliArgs(['articles', 'search', '10', '--title', ' nvidia ']), {
+        command: 'articles-search',
+        count: 10,
+        field: 'title',
+        text: 'nvidia',
+    });
+    assert.deepEqual(parseCliArgs(['articles', 'search', '10', '--url', 'nvidia']), {
+        command: 'articles-search',
+        count: 10,
+        field: 'url',
+        text: 'nvidia',
+    });
     assert.deepEqual(parseCliArgs(['articles', 'last', '10', '--url']), {
         command: 'articles-last',
         count: 10,
@@ -155,6 +167,9 @@ test('rejects invalid counts, flags and multiple digest ranges', () => {
     assert.throws(() => parseCliArgs(['lists', '--list']), /Missing required list name/u);
     assert.throws(() => parseCliArgs(['lists', '--list', '--url']), /Missing required list name/u);
     assert.throws(() => parseCliArgs(['lists', '--unknown']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['articles', 'search', '10']), /exactly one of --title or --url/u);
+    assert.throws(() => parseCliArgs(['articles', 'search', '10', '--title']), /Missing search text/u);
+    assert.throws(() => parseCliArgs(['articles', 'search', '10', '--title', 'nvidia', '--url', 'gpu']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['unknown', 'last', '2']), /Unknown resource/u);
     assert.throws(() => parseCliArgs(['articles', 'unknown', '2']), /Unknown articles command/u);
     assert.throws(
@@ -346,6 +361,26 @@ test('runs article and digest commands against only a temporary DB without write
     assert.equal(chosenExitCode, 0);
     assert.equal(chosenStderr.read(), '');
     assert.equal(chosenStdout.read(), 'https://example.com/two\n');
+
+    const titleSearchStdout = createCaptureStream();
+    const titleSearchExitCode = await runCli(['articles', 'search', '1', '--title', 'SAME TIME'], {
+        stdout: titleSearchStdout,
+        stderr: createCaptureStream(),
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(titleSearchExitCode, 0);
+    assert.deepEqual(JSON.parse(titleSearchStdout.read()).map(article => article.id), [3]);
+
+    const urlSearchStdout = createCaptureStream();
+    const urlSearchExitCode = await runCli(['articles', 'search', '10', '--url', 'EXAMPLE.COM/TWO'], {
+        stdout: urlSearchStdout,
+        stderr: createCaptureStream(),
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(urlSearchExitCode, 0);
+    assert.deepEqual(JSON.parse(urlSearchStdout.read()).map(article => article.id), [2]);
 
     const digestStdout = createCaptureStream();
     const digestStderr = createCaptureStream();
