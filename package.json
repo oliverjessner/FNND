@@ -7,6 +7,15 @@
     "bin": {
         "no-bullshit-rss": "./cli/no-bullshit-rss.js"
     },
+    "author": {
+        "name": "oliverjessner",
+        "url": "https://oliverjessner.at"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/oliverjessner/NO-BULLSHIT-RSS/"
+    },
+    "homepage": "https://oliverjessner.at/NO-BULLSHIT-RSS",
     "scripts": {
         "start": "node backend/server.js",
         "electron": "electron .",
