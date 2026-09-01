@@ -5,6 +5,7 @@ Usage:
   no-bullshit-rss topics
   no-bullshit-rss lists [--list <name>]
   no-bullshit-rss articles last <count> [--choose] [--url] [--title|--titles]
+  no-bullshit-rss articles random [--url] [--title|--titles]
   no-bullshit-rss articles search <count> (--title|--url) <text>
   no-bullshit-rss articles digest <count> [--daily|--weekly|--monthly]
 
@@ -14,6 +15,7 @@ Commands:
   lists                      Show all stored lists
   lists --list <name>        Show all articles in a named list
   articles last <count>      Show the newest stored articles
+  articles random            Show one random stored article
   articles search <count>    Search stored article titles or URLs
   articles digest <count>    Show the newest digest clusters as JSON
 
@@ -28,7 +30,7 @@ Options:
   -h, --help                 Show this help
 
 When --url and --title are combined, each line is URL<TAB>TITLE.
-Without a projection flag, "articles last" prints JSON.
+Without a projection flag, "articles last" prints a JSON array and "articles random" prints one JSON object.
 
 Examples:
   no-bullshit-rss rss
@@ -40,6 +42,8 @@ Examples:
   no-bullshit-rss articles last 10 --title
   no-bullshit-rss articles last 10 --url --title
   no-bullshit-rss articles last 10 --choose --url
+  no-bullshit-rss articles random
+  no-bullshit-rss articles random --url
   no-bullshit-rss articles search 10 --title "nvidia"
   no-bullshit-rss articles search 10 --url "nvidia"
   no-bullshit-rss articles digest 10 --daily
@@ -101,8 +105,17 @@ export function parseCliArgs(argv) {
     if (resource !== 'articles') {
         throw new Error(`Unknown resource: ${resource || '(missing)'}`);
     }
-    if (!['last', 'search', 'digest'].includes(action)) {
+    if (!['last', 'random', 'search', 'digest'].includes(action)) {
         throw new Error(`Unknown articles command: ${action || '(missing)'}`);
+    }
+    if (action === 'random') {
+        const randomFlags = args.slice(2);
+        rejectUnknownFlags(randomFlags, new Set(['--url', '--title', '--titles']));
+        return {
+            command: 'articles-random',
+            url: randomFlags.includes('--url'),
+            title: randomFlags.includes('--title') || randomFlags.includes('--titles'),
+        };
     }
     if (countValue === undefined || countValue.startsWith('--')) {
         throw new Error('Missing required <count>.');

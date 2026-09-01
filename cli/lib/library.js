@@ -39,6 +39,24 @@ export async function readStoredLists(database) {
     return rows.map(row => ({ ...row, id: Number(row.id), articleCount: Number(row.articleCount) }));
 }
 
+export async function readRandomStoredArticle(database) {
+    const sourceNameExpression = database.feedNamesAvailable === false
+        ? 'sources.name'
+        : "COALESCE(NULLIF(feeds.name, ''), sources.name)";
+    const sql = [
+        'SELECT articles.id, articles.title, articles.url, articles.publishedAt,',
+        sourceNameExpression,
+        'AS sourceName',
+        'FROM articles',
+        'JOIN feeds ON feeds.id = articles.feedId',
+        'JOIN sources ON sources.id = feeds.sourceId',
+        'ORDER BY RANDOM()',
+        'LIMIT 1',
+    ].join(' ');
+
+    return database.get(sql);
+}
+
 export async function readStoredListArticles(database, listName) {
     const lists = await database.all(
         'SELECT id, name FROM lists WHERE name = ? COLLATE NOCASE ORDER BY id ASC',
@@ -50,15 +68,19 @@ export async function readStoredListArticles(database, listName) {
     const sourceNameExpression = database.feedNamesAvailable === false
         ? 'sources.name'
         : "COALESCE(NULLIF(feeds.name, ''), sources.name)";
-    return database.all(
-        `SELECT articles.id, articles.title, articles.url, articles.publishedAt,
-                ${sourceNameExpression} AS sourceName
+    const selectSql = [
+        `SELECT articles.id, articles.title, articles.url, articles.publishedAt,`,
+        sourceNameExpression,
+        `AS sourceName
          FROM list_items
          JOIN articles ON articles.id = list_items.articleId
          JOIN feeds ON feeds.id = articles.feedId
          JOIN sources ON sources.id = feeds.sourceId
          WHERE list_items.listId = ?
          ORDER BY articles.publishedAt DESC, articles.id DESC`,
+    ].join('\n');
+    return database.all(
+        selectSql,
         [lists[0].id],
     );
 }

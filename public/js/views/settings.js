@@ -142,6 +142,10 @@ function topicPayload() {
     return { slug: dom.settings.topicSlug.value.trim(), label: dom.settings.topicLabel.value.trim(), strong: split(dom.settings.topicStrong.value), medium: split(dom.settings.topicMedium.value), weak: split(dom.settings.topicWeak.value) };
 }
 
+function confirmDeletion(type, label) {
+    return confirm(['Delete ', type, ' "', label, '"?'].join(''));
+}
+
 function bindTabs() {
     dom.settings.tabs.addEventListener('click', event => {
         const tab = event.target.closest('.settings-tab[data-settings]'); if (!tab) return;
@@ -169,7 +173,7 @@ function bindFeedActions() {
     dom.settings.feedsList.addEventListener('click', async event => {
         const action = event.target.closest('[data-action]'); const id = Number(action?.closest('[data-feed-id]')?.dataset.feedId); const feed = store.reference.feedsById.get(id); if (!action || !feed) return;
         if (action.dataset.action === 'edit-feed') { store.settings.feedEditingId = id; dom.settings.feedName.value = feed.name; dom.settings.feedWebsite.value = feed.websiteUrl; dom.settings.feedUrl.value = feed.feedUrl; text(dom.settings.feedSubmit, 'Save changes'); text(dom.settings.feedStatus, 'Edit mode active.'); }
-        if (action.dataset.action === 'delete-feed' && confirm(`Delete feed "${feed.name}"?`)) { try { await api.deleteFeed(id); await reloadFeeds(); await onFeedChanged(); } catch (error) { toast.error(error.message); } }
+        if (action.dataset.action === 'delete-feed' && confirmDeletion('feed', feed.name)) { try { await api.deleteFeed(id); await reloadFeeds(); await onFeedChanged(); } catch (error) { toast.error(error.message); } }
     });
 }
 
@@ -185,7 +189,7 @@ function bindListActions() {
     dom.settings.listsList.addEventListener('click', async event => {
         const action = event.target.closest('[data-action]'); const id = Number(action?.closest('[data-list-id]')?.dataset.listId); const list = store.reference.listsById.get(id); if (!action || !list) return;
         if (action.dataset.action === 'edit-list') { store.settings.listEditingId = id; dom.settings.listName.value = list.name; dom.settings.listDescription.value = list.description || ''; dom.settings.listColor.value = list.color || '#1d1d1f'; text(dom.settings.listSubmit, 'Save changes'); text(dom.settings.listStatus, 'Edit mode active.'); }
-        if (action.dataset.action === 'delete-list' && confirm(`Delete list "${list.name}"?`)) { try { await api.deleteList(id); await reloadLists(); } catch (error) { toast.error(error.message); } }
+        if (action.dataset.action === 'delete-list' && confirmDeletion('list', list.name)) { try { await api.deleteList(id); await reloadLists(); } catch (error) { toast.error(error.message); } }
     });
 }
 
@@ -201,11 +205,11 @@ function bindTopicActions() {
     dom.settings.topicsList.addEventListener('click', async event => {
         const action = event.target.closest('[data-action]'); const slug = action?.closest('[data-topic-slug]')?.dataset.topicSlug; const topic = store.reference.topicsBySlug.get(slug); if (!action || !topic) return;
         if (action.dataset.action === 'edit-topic') { store.settings.topicEditingSlug = slug; dom.settings.topicSlug.value = topic.slug; dom.settings.topicLabel.value = topic.label; dom.settings.topicStrong.value = (topic.strong || []).join('\n'); dom.settings.topicMedium.value = (topic.medium || []).join('\n'); dom.settings.topicWeak.value = (topic.weak || []).join('\n'); text(dom.settings.topicSubmit, 'save changes'); text(dom.settings.topicStatus, `Editing topic: ${slug}`); }
-        if (action.dataset.action === 'delete-topic' && confirm(`Delete topic "${topic.label || slug}"?`)) { try { await api.deleteTopic(slug); resetTopicForm(); await reloadTopics(); const rules = await api.topicRules(); dom.settings.topicsJson.value = rules?.raw || ''; } catch (error) { toast.error(error.message); } }
+        if (action.dataset.action === 'delete-topic' && confirmDeletion('topic', topic.label || slug)) { try { await api.deleteTopic(slug); resetTopicForm(); await reloadTopics(); const rules = await api.topicRules(); dom.settings.topicsJson.value = rules?.raw || ''; } catch (error) { toast.error(error.message); } }
     });
     dom.settings.topicsValidate.addEventListener('click', async () => { const label = dom.settings.topicsValidate.textContent; dom.settings.topicsValidate.disabled = true; try { const result = await api.validateTopics(dom.settings.topicsJson.value); text(dom.settings.topicsJsonStatus, `Valid (${result.topicCount} topic${result.topicCount === 1 ? '' : 's'})`); } catch (error) { text(dom.settings.topicsJsonStatus, `Invalid JSON: ${error.message}`); } finally { dom.settings.topicsValidate.disabled = false; text(dom.settings.topicsValidate, label); } });
     dom.settings.topicsSave.addEventListener('click', async () => { dom.settings.topicsSave.disabled = true; try { const result = await api.saveTopicRules(dom.settings.topicsJson.value); dom.settings.topicsJson.value = result?.raw || dom.settings.topicsJson.value; await reloadTopics(); text(dom.settings.topicsJsonStatus, `Saved (${result?.topics?.length || 0} topics)`); } catch (error) { text(dom.settings.topicsJsonStatus, `Error: ${error.message}`); } finally { dom.settings.topicsSave.disabled = false; } });
-    dom.settings.topicsReprocess.addEventListener('click', async () => { dom.settings.topicsReprocess.disabled = true; text(dom.settings.topicsReprocessStatus, 'Reprocessing…'); try { const result = await api.reprocessTopics(); text(dom.settings.topicsReprocessStatus, `Done: ${result.processed} processed · ${result.assignedArticles} with topics · ${result.topicAssignments} assignments`); } catch (error) { text(dom.settings.topicsReprocessStatus, `Error: ${error.message}`); } finally { dom.settings.topicsReprocess.disabled = false; } });
+    dom.settings.topicsReprocess.addEventListener('click', async () => { dom.settings.topicsReprocess.disabled = true; text(dom.settings.topicsReprocessStatus, 'Reprocessing…'); try { const result = await api.reprocessTopics(); text(dom.settings.topicsReprocessStatus, ['Done: ', result.processed, ' processed · ', result.assignedArticles, ' with topics · ', result.topicAssignments, ' assignments'].join('')); } catch (error) { text(dom.settings.topicsReprocessStatus, `Error: ${error.message}`); } finally { dom.settings.topicsReprocess.disabled = false; } });
 }
 
 function bindDigestSettings() {

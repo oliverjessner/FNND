@@ -1,8 +1,8 @@
 ## 1.0.2
 
-- search in cli
-- random in cli
-- security issues fixed
+- search in cli `no-bullshit-rss articles search 10 --title "nvidia"`
+- random in cli `no-bullshit-rss articles random`
+- security issues fixed with [ItWorksBut](https://github.com/oliverjessner/ItWorksBut)
 
 ## 1.0.1
 

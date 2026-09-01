@@ -67,6 +67,22 @@ The selector is rendered on stderr and only the selected result is written to st
 
 Articles are ordered by `publishedAt DESC, id DESC`.
 
+## Random article
+
+Return one randomly selected stored article as a compact JSON object:
+
+```bash
+no-bullshit-rss articles random
+```
+
+The existing projection flags can be used to print only the URL, title, or both:
+
+```bash
+no-bullshit-rss articles random --url
+no-bullshit-rss articles random --title
+no-bullshit-rss articles random --url --title
+```
+
 ## Search articles
 
 Search the newest stored articles whose title contains text. Matching is case-insensitive:

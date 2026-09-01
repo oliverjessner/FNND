@@ -6,13 +6,14 @@ async function loadActiveClusters(period, database) {
     const sourceNameExpression = database.feedNamesAvailable === false
         ? 'sources.name'
         : "COALESCE(NULLIF(feeds.name, ''), sources.name)";
-    const rows = await database.all(
+    const selectSql = [
         `SELECT digest_clusters.id AS clusterId, digest_clusters.clusterKey, digest_clusters.title AS clusterTitle,
                 digest_clusters.articleCount AS clusterCount, digest_clusters.displayPosition,
                 digest_cluster_articles.position, digest_cluster_articles.isRepresentative,
                 articles.id, articles.feedId, articles.title, articles.teaser, articles.url, articles.publishedAt,
-                articles.externalId AS guidOrHash,
-                ${sourceNameExpression} AS sourceName,
+                articles.externalId AS guidOrHash,`,
+        sourceNameExpression,
+        `AS sourceName,
                 sources.logo IS NOT NULL AS hasSourceLogo,
                 digest_cluster_state.readAt, digest_cluster_state.dismissedAt, digest_cluster_state.completedAt
          FROM digest_clusters
@@ -25,6 +26,9 @@ async function loadActiveClusters(period, database) {
          WHERE digest_clusters.digestGenerationId = ?
            AND digest_cluster_state.dismissedAt IS NULL AND digest_cluster_state.completedAt IS NULL
          ORDER BY digest_clusters.displayPosition, digest_cluster_articles.position`,
+    ].join('\n');
+    const rows = await database.all(
+        selectSql,
         [period.id, period.activeGenerationId],
     );
     const topicsByArticleId = await loadTopicsByArticleIds(rows.map(row => Number(row.id)), { all: database.all });

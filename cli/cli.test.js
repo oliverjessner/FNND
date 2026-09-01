@@ -35,6 +35,10 @@ async function createFixtureDatabase(databasePath, { includeFeedNames = true } =
         new Promise((resolve, reject) => {
             database.exec(sql, error => (error ? reject(error) : resolve()));
         });
+    const run = (sql, params = []) =>
+        new Promise((resolve, reject) => {
+            database.run(sql, params, error => (error ? reject(error) : resolve()));
+        });
     const close = () =>
         new Promise((resolve, reject) => {
             database.close(error => (error ? reject(error) : resolve()));
@@ -49,45 +53,68 @@ async function createFixtureDatabase(databasePath, { includeFeedNames = true } =
     const newestTimestamp = new Date(now.getTime() - 60_000).toISOString();
     const olderTimestamp = new Date(now.getTime() - 3_600_000).toISOString();
     const period = getDigestPeriodDefinition('day', now, 'Europe/Vienna');
-    await exec(`
+    await exec(
+        `
         INSERT INTO sources (id, name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
         VALUES (1, 'Test Source', 'https://example.com', 'https://example.com/', datetime('now'), datetime('now'));
         INSERT INTO feeds (id, sourceId, feedUrl, createdAt, updatedAt)
         VALUES (1, 1, 'https://example.com/feed', datetime('now'), datetime('now'));
-        INSERT INTO articles
-            (id, feedId, externalId, title, teaser, url, canonicalUrl, contentHash, publishedAt, fetchedAt,
-             createdAt, updatedAt, classificationStatus)
-        VALUES
-            (1, 1, 'older', 'Older', 'Older teaser', 'https://example.com/older', 'https://example.com/older', 'h1', '${olderTimestamp}', '${now.toISOString()}', datetime('now'), datetime('now'), 'ready'),
-            (2, 1, 'two', 'Same time lower id', 'Digest topic alpha', 'https://example.com/two', 'https://example.com/two', 'h2', '${newestTimestamp}', '${now.toISOString()}', datetime('now'), datetime('now'), 'ready'),
-            (3, 1, 'three', 'Same time higher id', 'Digest topic beta', 'https://example.com/three', 'https://example.com/three', 'h3', '${newestTimestamp}', '${now.toISOString()}', datetime('now'), datetime('now'), 'ready');
-        INSERT INTO article_state (articleId, dismissedAt, createdAt, updatedAt) VALUES
-            (1, NULL, datetime('now'), datetime('now')),
-            (2, NULL, datetime('now'), datetime('now')),
-            (3, datetime('now'), datetime('now'), datetime('now'));
         INSERT INTO topics (id, slug, label, configJson, ruleHash, ruleVersion, createdAt, updatedAt)
         VALUES (1, 'nvidia', 'Nvidia', '{"type":null,"minMatches":1,"exclude":[],"strong":["nvidia"],"medium":[],"weak":[]}', 'topic-hash', 2, datetime('now'), datetime('now'));
         INSERT INTO lists (id, name, description, color, createdAt, updatedAt)
         VALUES (1, 'Nvidia', 'GPU news', '#76b900', datetime('now'), datetime('now'));
+        `,
+    );
+    await run(
+        `INSERT INTO articles
+            (id, feedId, externalId, title, teaser, url, canonicalUrl, contentHash, publishedAt, fetchedAt,
+             createdAt, updatedAt, classificationStatus)
+         VALUES
+            (1, 1, 'older', 'Older', 'Older teaser', 'https://example.com/older', 'https://example.com/older', 'h1', ?, ?, datetime('now'), datetime('now'), 'ready'),
+            (2, 1, 'two', 'Same time lower id', 'Digest topic alpha', 'https://example.com/two', 'https://example.com/two', 'h2', ?, ?, datetime('now'), datetime('now'), 'ready'),
+            (3, 1, 'three', 'Same time higher id', 'Digest topic beta', 'https://example.com/three', 'https://example.com/three', 'h3', ?, ?, datetime('now'), datetime('now'), 'ready')`,
+        [olderTimestamp, now.toISOString(), newestTimestamp, now.toISOString(), newestTimestamp, now.toISOString()],
+    );
+    await exec(
+        `
+        INSERT INTO article_state (articleId, dismissedAt, createdAt, updatedAt) VALUES
+            (1, NULL, datetime('now'), datetime('now')),
+            (2, NULL, datetime('now'), datetime('now')),
+            (3, datetime('now'), datetime('now'), datetime('now'));
         INSERT INTO list_items (listId, articleId, createdAt) VALUES
             (1, 1, datetime('now')),
             (1, 2, datetime('now'));
-        INSERT INTO digest_periods
+        `,
+    );
+    await run(
+        `INSERT INTO digest_periods
             (id, type, periodKey, startsAt, endsAt, timezone, status, activeGenerationId, generatedAt,
              algorithmVersion, rulesVersion, createdAt, updatedAt)
-        VALUES (1, 'day', '${period.periodKey}', '${period.startsAt}', '${period.endsAt}', 'Europe/Vienna', 'ready', 1,
-                datetime('now'), 'test', 'test', datetime('now'), datetime('now'));
+         VALUES (1, 'day', ?, ?, ?, 'Europe/Vienna', 'ready', 1,
+                datetime('now'), 'test', 'test', datetime('now'), datetime('now'))`,
+        [period.periodKey, period.startsAt, period.endsAt],
+    );
+    await exec(
+        `
         INSERT INTO digest_generations
             (id, digestPeriodId, generationNumber, status, sourceArticleCount, clusterCount, algorithmVersion, rulesVersion, startedAt, generatedAt)
         VALUES (1, 1, 1, 'ready', 1, 1, 'test', 'test', datetime('now'), datetime('now'));
-        INSERT INTO digest_clusters
+        `,
+    );
+    await run(
+        `INSERT INTO digest_clusters
             (id, digestGenerationId, clusterKey, title, representativeArticleId, articleCount, firstPublishedAt,
              lastPublishedAt, fingerprint, displayPosition)
-        VALUES (1, 1, 'cluster-2', 'Same time lower id', 2, 1, '${newestTimestamp}', '${newestTimestamp}', 'fp', 0);
+         VALUES (1, 1, 'cluster-2', 'Same time lower id', 2, 1, ?, ?, 'fp', 0)`,
+        [newestTimestamp, newestTimestamp],
+    );
+    await exec(
+        `
         INSERT INTO digest_cluster_articles
             (digestClusterId, digestGenerationId, articleId, position, similarity, isRepresentative)
         VALUES (1, 1, 2, 0, NULL, 1);
-    `);
+        `,
+    );
 
     return { close };
 }
@@ -145,6 +172,16 @@ test('parses article projections and digest ranges', () => {
         title: false,
         choose: true,
     });
+    assert.deepEqual(parseCliArgs(['articles', 'random']), {
+        command: 'articles-random',
+        url: false,
+        title: false,
+    });
+    assert.deepEqual(parseCliArgs(['articles', 'random', '--url', '--titles']), {
+        command: 'articles-random',
+        url: true,
+        title: true,
+    });
     assert.deepEqual(parseCliArgs(['articles', 'digest', '5']), {
         command: 'articles-digest',
         count: 5,
@@ -161,6 +198,8 @@ test('rejects invalid counts, flags and multiple digest ranges', () => {
     assert.throws(() => parseCliArgs(['articles', 'last', 'foo']), /greater than 0/u);
     assert.throws(() => parseCliArgs(['articles', 'last', '1.5']), /greater than 0/u);
     assert.throws(() => parseCliArgs(['articles', 'last', '2', '--weekly']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['articles', 'random', '2']), /Unknown option/u);
+    assert.throws(() => parseCliArgs(['articles', 'random', '--choose']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['articles', 'digest', '2', '--choose']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['rss', '--url']), /Unknown option/u);
     assert.throws(() => parseCliArgs(['topics', '--list']), /Unknown option/u);
@@ -381,6 +420,31 @@ test('runs article and digest commands against only a temporary DB without write
     });
     assert.equal(urlSearchExitCode, 0);
     assert.deepEqual(JSON.parse(urlSearchStdout.read()).map(article => article.id), [2]);
+
+    const randomStdout = createCaptureStream();
+    const randomStderr = createCaptureStream();
+    const randomExitCode = await runCli(['articles', 'random'], {
+        stdout: randomStdout,
+        stderr: randomStderr,
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(randomExitCode, 0);
+    assert.equal(randomStderr.read(), '');
+    const randomArticle = JSON.parse(randomStdout.read());
+    assert.equal([1, 2, 3].includes(randomArticle.id), true);
+    assert.equal(typeof randomArticle.title, 'string');
+    assert.match(randomArticle.url, /^https:\/\/example\.com\//u);
+
+    const randomUrlStdout = createCaptureStream();
+    const randomUrlExitCode = await runCli(['articles', 'random', '--url'], {
+        stdout: randomUrlStdout,
+        stderr: createCaptureStream(),
+        cwd: directory,
+        env: { DB_PATH: databasePath },
+    });
+    assert.equal(randomUrlExitCode, 0);
+    assert.match(randomUrlStdout.read(), /^https:\/\/example\.com\/(?:older|two|three)\n$/u);
 
     const digestStdout = createCaptureStream();
     const digestStderr = createCaptureStream();

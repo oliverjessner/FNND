@@ -99,7 +99,7 @@ export async function queryArticles(
         whereParts.push('feeds.id = ?');
         params.push(feedId);
     } else if (source) {
-        whereParts.push(`${sourceNameExpression} = ?`);
+        whereParts.push([sourceNameExpression, '= ?'].join(' '));
         params.push(source);
     }
     if (listId) {
@@ -145,17 +145,22 @@ export async function queryArticles(
     const normalizedLimit = upperLimit === null ? positiveLimit : Math.min(positiveLimit, upperLimit);
     const normalizedOffset = Number.isFinite(parsedOffset) ? Math.max(Math.trunc(parsedOffset), 0) : 0;
 
-    const sql = [
+    const selectColumns = [
         `SELECT articles.id, articles.feedId, articles.title, articles.teaser, articles.url,
          articles.publishedAt, articles.createdAt, articles.updatedAt, article_state.dismissedAt,
-         ${sourceNameExpression} AS sourceName,
+        `,
+        sourceNameExpression,
+        `AS sourceName,
          sources.logo IS NOT NULL AS hasSourceLogo,
          EXISTS (SELECT 1 FROM list_items WHERE list_items.articleId = articles.id) AS saved`,
+    ].join('\n');
+    const sql = [
+        selectColumns,
         'FROM articles',
         'JOIN feeds ON feeds.id = articles.feedId',
         'JOIN sources ON sources.id = feeds.sourceId',
         'LEFT JOIN article_state ON article_state.articleId = articles.id',
-        whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '',
+        whereParts.length ? ['WHERE', whereParts.join(' AND ')].join(' ') : '',
         'ORDER BY articles.publishedAt DESC, articles.id DESC',
         'LIMIT ? OFFSET ?',
     ]

@@ -1,12 +1,31 @@
 import express from 'express';
 import { all, get, run, transaction } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
+import { positiveIdParamsSchema, requestSchema as schema } from '../middleware/validate-request.js';
 import { isValidUrl } from '../utils/validation.js';
 import Parser from 'rss-parser';
 import { fetchSiteLogo } from '../services/logo.js';
 import { publish } from '../services/events.js';
 
 const router = express.Router();
+const feedBodySchema = {
+    type: 'object',
+    required: ['name', 'websiteUrl', 'feedUrl'],
+    properties: {
+        name: { type: 'string', minLength: 1, maxLength: 200 },
+        websiteUrl: { type: 'string', minLength: 1, maxLength: 2_048 },
+        feedUrl: { type: 'string', minLength: 1, maxLength: 2_048 },
+    },
+    additionalProperties: true,
+};
+const feedTestQuerySchema = {
+    type: 'object',
+    required: ['url'],
+    properties: {
+        url: { type: 'string', minLength: 1, maxLength: 2_048 },
+    },
+    additionalProperties: true,
+};
 const parser = new Parser({
     timeout: 8000,
     headers: {
@@ -75,11 +94,12 @@ router.get('/', auth, async (_, res) => {
     return res.json(feeds.map(mapFeed));
 });
 
-router.get('/:id/logo', auth, async (req, res) => {
+router.get('/:id/logo', auth, schema.validate({ params: positiveIdParamsSchema }), async (req, res) => {
     const row = await get(
         `SELECT sources.logo, sources.logoMime FROM feeds
-         JOIN sources ON sources.id = feeds.sourceId WHERE feeds.id = ?`,
-        [req.params.id],
+         JOIN sources ON sources.id = feeds.sourceId
+         WHERE feeds.id = ? AND ? = 'local-owner'`,
+        [req.params.id, req.auth.ownerId],
     );
     if (!row?.logo || !row?.logoMime) return res.status(404).end();
     res.setHeader('Content-Type', row.logoMime);
@@ -87,7 +107,7 @@ router.get('/:id/logo', auth, async (req, res) => {
     return res.send(row.logo);
 });
 
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, schema.validate({ body: feedBodySchema }), async (req, res) => {
     const { name, websiteUrl, feedUrl } = req.body || {};
     let logoBuffer = null;
     let logoMime = null;
@@ -119,7 +139,7 @@ router.post('/', auth, async (req, res) => {
     return res.status(201).json(mapFeed(feed));
 });
 
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, schema.validate({ params: positiveIdParamsSchema, body: feedBodySchema }), async (req, res) => {
     const { id } = req.params;
     const { name, websiteUrl, feedUrl } = req.body || {};
     const existing = await get(`${feedSelect} WHERE feeds.id = ? AND ? = ?`, [id, req.auth.ownerId, 'local-owner']);
@@ -163,7 +183,7 @@ router.put('/:id', auth, async (req, res) => {
     res.json(mapFeed(feed));
 });
 
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, schema.validate({ params: positiveIdParamsSchema }), async (req, res) => {
     const { id } = req.params;
     const result = await run('DELETE FROM feeds WHERE id = ? AND ? = ?', [id, req.auth.ownerId, 'local-owner']);
 
@@ -175,7 +195,7 @@ router.delete('/:id', auth, async (req, res) => {
     return res.status(204).end();
 });
 
-router.get('/test/url', auth, async ({ query: { url } }, res) => {
+router.get('/test/url', auth, schema.validate({ query: feedTestQuerySchema }), async ({ query: { url } }, res) => {
     if (!isValidUrl(url)) {
         return res.status(400).json({ error: 'Invalid URL format' });
     }

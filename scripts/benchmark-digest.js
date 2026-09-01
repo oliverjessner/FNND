@@ -5,8 +5,8 @@ const budgetMs = Math.max(1, Number(process.env.DIGEST_BENCHMARK_BUDGET_MS) || 2
 const now = Date.now();
 const articles = Array.from({ length: articleCount }, (_, index) => ({
     id: index + 1,
-    title: `Unique report ${index} company-${index}`,
-    teaser: `Market technology update ${index}`,
+    title: ['Unique report ', index, ' company-', index].join(''),
+    teaser: ['Market technology update ', index].join(''),
     url: `https://example.test/${index}`,
     publishedAt: new Date(now - index * 60_000).toISOString(),
 }));

@@ -1,9 +1,48 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
+import { articleIdsSchema, positiveIdParamsSchema, requestSchema as schema } from '../middleware/validate-request.js';
 import { publish } from '../services/events.js';
 
 const router = express.Router();
+const listBodySchema = {
+    type: 'object',
+    required: ['name'],
+    properties: {
+        name: { type: 'string', minLength: 1, maxLength: 200 },
+        description: { type: 'string', maxLength: 2_000 },
+        color: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+    additionalProperties: true,
+};
+const articleIdBodySchema = {
+    type: 'object',
+    required: ['articleId'],
+    properties: {
+        articleId: {
+            anyOf: [
+                { type: 'integer', minimum: 1 },
+                { type: 'string', pattern: '^[1-9]\\d*$' },
+            ],
+        },
+    },
+    additionalProperties: true,
+};
+const articleIdsBodySchema = {
+    type: 'object',
+    required: ['articleIds'],
+    properties: { articleIds: articleIdsSchema },
+    additionalProperties: true,
+};
+const listItemParamsSchema = {
+    type: 'object',
+    required: ['id', 'articleId'],
+    properties: {
+        id: { type: 'string', pattern: '^[1-9]\\d*$' },
+        articleId: { type: 'string', pattern: '^[1-9]\\d*$' },
+    },
+    additionalProperties: true,
+};
 
 function normalizeArticleIds(value) {
     if (!Array.isArray(value)) {
@@ -25,7 +64,7 @@ router.get('/', auth, async (_, res) => {
     return res.json(lists);
 });
 
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, schema.validate({ body: listBodySchema }), async (req, res) => {
     const { name, description, color = '#1d1d1f' } = req.body || {};
     const desc = description ? description.trim() : null;
     const values = [name.trim(), desc, color];
@@ -46,7 +85,7 @@ router.post('/', auth, async (req, res) => {
     return res.status(201).json(list);
 });
 
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, schema.validate({ params: positiveIdParamsSchema, body: listBodySchema }), async (req, res) => {
     const { id } = req.params;
     const { name, description, color = '#1d1d1f' } = req.body || {};
     const desc = description ? description.trim() : null;
@@ -70,8 +109,9 @@ router.put('/:id', auth, async (req, res) => {
     res.json(list);
 });
 
-router.delete('/:id', auth, async ({ params: { id } }, res) => {
-    const result = await run('DELETE FROM lists WHERE id = ?', [id]);
+router.delete('/:id', auth, schema.validate({ params: positiveIdParamsSchema }), async (req, res) => {
+    const { id } = req.params;
+    const result = await run("DELETE FROM lists WHERE id = ? AND ? = 'local-owner'", [id, req.auth.ownerId]);
 
     if (result.changes === 0) {
         return res.status(404).json({ error: 'List not found' });
@@ -81,7 +121,7 @@ router.delete('/:id', auth, async ({ params: { id } }, res) => {
     return res.status(204).end();
 });
 
-router.post('/:id/items', auth, async ({ params: { id }, body: { articleId } }, res) => {
+router.post('/:id/items', auth, schema.validate({ params: positiveIdParamsSchema, body: articleIdBodySchema }), async ({ params: { id }, body: { articleId } }, res) => {
     if (!articleId) {
         return res.status(400).json({ error: 'articleId is required' });
     }
@@ -96,7 +136,7 @@ router.post('/:id/items', auth, async ({ params: { id }, body: { articleId } }, 
     return res.status(201).json({ ok: true });
 });
 
-router.post('/:id/items/bulk', auth, async ({ params: { id }, body: { articleIds } }, res) => {
+router.post('/:id/items/bulk', auth, schema.validate({ params: positiveIdParamsSchema, body: articleIdsBodySchema }), async ({ params: { id }, body: { articleIds } }, res) => {
     const normalizedArticleIds = normalizeArticleIds(articleIds);
 
     if (normalizedArticleIds.length === 0) {
@@ -139,7 +179,7 @@ router.post('/:id/items/bulk', auth, async ({ params: { id }, body: { articleIds
     });
 });
 
-router.post('/:id/items/bulk-delete', auth, async ({ params: { id }, body: { articleIds } }, res) => {
+router.post('/:id/items/bulk-delete', auth, schema.validate({ params: positiveIdParamsSchema, body: articleIdsBodySchema }), async ({ params: { id }, body: { articleIds } }, res) => {
     const normalizedArticleIds = normalizeArticleIds(articleIds);
 
     if (normalizedArticleIds.length === 0) {
@@ -179,7 +219,7 @@ router.post('/:id/items/bulk-delete', auth, async ({ params: { id }, body: { art
     });
 });
 
-router.delete('/:id/items/:articleId', auth, async ({ params: { id, articleId } }, res) => {
+router.delete('/:id/items/:articleId', auth, schema.validate({ params: listItemParamsSchema }), async ({ params: { id, articleId } }, res) => {
     const result = await run('DELETE FROM list_items WHERE listId = ? AND articleId = ?', [id, articleId]);
 
     if (result.changes === 0) {

@@ -109,7 +109,7 @@ test('materializes idempotent feed-scoped articles and independent digest state'
 });
 
 test('keeps the previous active generation when a rebuild fails', async () => {
-    const period = await database.get("SELECT id, activeGenerationId FROM digest_periods WHERE type = 'day' ORDER BY startsAt DESC LIMIT 1");
+    const period = await database.get("SELECT id, activeGenerationId, startsAt FROM digest_periods WHERE type = 'day' ORDER BY startsAt DESC LIMIT 1");
     const activeGenerationId = Number(period.activeGenerationId);
     await database.run("UPDATE digest_periods SET dirtyAt = datetime('now') WHERE id = ?", [period.id]);
     await database.run(
@@ -117,13 +117,20 @@ test('keeps the previous active generation when a rebuild fails', async () => {
          BEGIN SELECT RAISE(ABORT, 'simulated generation failure'); END`,
     );
     await assert.rejects(generateDigestPeriod(period.id), /simulated generation failure/u);
-    const afterFailure = await database.get('SELECT status, activeGenerationId, dirtyAt FROM digest_periods WHERE id = ?', [period.id]);
+    const periodIdentity = ['day', period.startsAt];
+    const afterFailure = await database.get(
+        'SELECT status, activeGenerationId, dirtyAt FROM digest_periods WHERE type = ? AND startsAt = ?',
+        periodIdentity,
+    );
     assert.equal(Number(afterFailure.activeGenerationId), activeGenerationId);
     assert.equal(afterFailure.status, 'ready');
     assert.ok(afterFailure.dirtyAt);
     await database.run('DROP TRIGGER fail_digest_member_insert');
     await generateDigestPeriod(period.id);
-    const afterRecovery = await database.get('SELECT status, activeGenerationId, dirtyAt FROM digest_periods WHERE id = ?', [period.id]);
+    const afterRecovery = await database.get(
+        'SELECT status, activeGenerationId, dirtyAt FROM digest_periods WHERE type = ? AND startsAt = ?',
+        periodIdentity,
+    );
     assert.equal(afterRecovery.status, 'ready');
     assert.notEqual(Number(afterRecovery.activeGenerationId), activeGenerationId);
     assert.equal(afterRecovery.dirtyAt, null);

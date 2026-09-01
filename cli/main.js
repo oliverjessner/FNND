@@ -4,7 +4,7 @@ import { parseCliArgs, getHelpText } from './lib/arguments.js';
 import { chooseArticle as chooseArticleInteractively } from './lib/choose.js';
 import { discoverDatabasePath } from './lib/database-path.js';
 import { readStoredFeeds } from './lib/feeds.js';
-import { readStoredListArticles, readStoredLists, readStoredTopics } from './lib/library.js';
+import { readRandomStoredArticle, readStoredListArticles, readStoredLists, readStoredTopics } from './lib/library.js';
 import { formatChosenArticle, formatDigest, formatFeeds, formatLastArticles } from './lib/output.js';
 import { openReadOnlyDatabase } from './lib/read-only-database.js';
 
@@ -73,6 +73,10 @@ export async function runCli(
                 database,
             );
             writeResult(stdout, formatLastArticles(articles));
+        } else if (command.command === 'articles-random') {
+            const article = await readRandomStoredArticle(database);
+            if (!article) throw new Error('No stored articles found.');
+            writeResult(stdout, formatChosenArticle(article, command));
         } else if (command.command === 'articles-last') {
             const articles = await queryArticles(
                 {

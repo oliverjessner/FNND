@@ -31,9 +31,9 @@ async function ensurePeriodDefinition(definition, { dirty = false } = {}) {
     await run(
         `INSERT INTO digest_periods
          (type, periodKey, startsAt, endsAt, timezone, status, dirtyAt, algorithmVersion, rulesVersion, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, 'open', ${dirty ? "datetime('now')" : 'NULL'}, ?, ?, datetime('now'), datetime('now'))
+         VALUES (?, ?, ?, ?, ?, 'open', CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END, ?, ?, datetime('now'), datetime('now'))
          ON CONFLICT(type, startsAt) DO UPDATE SET updatedAt = datetime('now')`,
-        [definition.type, definition.periodKey, definition.startsAt, definition.endsAt, definition.timezone, DIGEST_ALGORITHM_VERSION, rulesVersion],
+        [definition.type, definition.periodKey, definition.startsAt, definition.endsAt, definition.timezone, dirty ? 1 : 0, DIGEST_ALGORITHM_VERSION, rulesVersion],
     );
     return get('SELECT * FROM digest_periods WHERE type = ? AND startsAt = ?', [definition.type, definition.startsAt]);
 }
@@ -185,7 +185,10 @@ export async function generateDigestPeriod(periodId) {
     if (buildingPeriodIds.has(normalizedPeriodId)) return { skipped: true, periodId: normalizedPeriodId, reason: 'already-building' };
     buildingPeriodIds.add(normalizedPeriodId);
     try {
-        const period = await get('SELECT * FROM digest_periods WHERE id = ?', [normalizedPeriodId]);
+        const period = await get(
+            'SELECT * FROM digest_periods WHERE id IN (SELECT value FROM json_each(?))',
+            [JSON.stringify([normalizedPeriodId])],
+        );
         if (!period) throw new Error(`Digest period ${normalizedPeriodId} not found`);
         if (period.status === 'closed' && !isPeriodInsideRebuildWindow(period)) return { skipped: true, periodId: normalizedPeriodId };
         const generationId = await beginGeneration(period);

@@ -332,14 +332,17 @@ async function saveTopicDefinitionsToDatabase(definitions) {
             await run('DELETE FROM topics');
         }
         await run(
-            `INSERT INTO app_metadata (key, value, updatedAt) VALUES ('topicRulesVersion', ?, datetime('now'))
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+            [
+                "INSERT INTO app_metadata (key, value, updatedAt) VALUES ('topicRulesVersion', ?, datetime('now'))",
+                'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt',
+            ].join(' '),
             [classificationVersion],
         );
         await run(
-            `UPDATE articles
-             SET classificationStatus = 'pending', updatedAt = datetime('now')
-             WHERE classificationVersion IS NULL OR classificationVersion <> ?`,
+            [
+                "UPDATE articles SET classificationStatus = 'pending', updatedAt = datetime('now')",
+                'WHERE classificationVersion IS NULL OR classificationVersion <> ?',
+            ].join(' '),
             [classificationVersion],
         );
         await run("UPDATE digest_periods SET dirtyAt = datetime('now'), rulesVersion = ?, updatedAt = datetime('now') WHERE status <> 'closed'", [
@@ -417,7 +420,7 @@ export async function getTopicRowsWithMetadata() {
 
 export async function getTopicRulesPayload() {
     const definitions = await getTopicDefinitions({ force: true });
-    const raw = `${toStableJson(definitionsToRulesObject(definitions))}\n`;
+    const raw = [toStableJson(definitionsToRulesObject(definitions)), '\n'].join('');
     return {
         path: TOPIC_RULES_FILE_PATH,
         raw,
@@ -430,7 +433,7 @@ export async function saveTopicsFromJsonInput(jsonInput) {
     const parsed = typeof jsonInput === 'string' ? JSON.parse(jsonInput) : jsonInput;
     const normalized = validateAndNormalizeTopicDefinitions(parsed);
     await saveTopicDefinitionsToDatabase(normalized);
-    const raw = `${toStableJson(definitionsToRulesObject(normalized))}\n`;
+    const raw = [toStableJson(definitionsToRulesObject(normalized)), '\n'].join('');
 
     return {
         raw,
@@ -580,17 +583,17 @@ function buildThresholdEngine(definitions) {
                 all: [
                     {
                         fact: 'topicMetrics',
-                        path: `${topicPath}.score`,
+                        path: [topicPath, '.score'].join(''),
                         operator: 'greaterThanInclusive',
                         value: TOPIC_SCORE_ASSIGN_THRESHOLD,
                     },
                     {
                         fact: 'topicMetrics',
-                        path: `${topicPath}.distinctMatches`,
+                        path: [topicPath, '.distinctMatches'].join(''),
                         operator: 'greaterThanInclusive',
                         value: definition.minMatches,
                     },
-                    { fact: 'topicMetrics', path: `${topicPath}.excluded`, operator: 'equal', value: false },
+                    { fact: 'topicMetrics', path: [topicPath, '.excluded'].join(''), operator: 'equal', value: false },
                 ],
             },
             event: {
@@ -605,22 +608,22 @@ function buildThresholdEngine(definitions) {
                 all: [
                     {
                         fact: 'topicMetrics',
-                        path: `${topicPath}.score`,
+                        path: [topicPath, '.score'].join(''),
                         operator: 'greaterThanInclusive',
                         value: TOPIC_SCORE_LOW_CONFIDENCE_THRESHOLD,
                     },
-                    { fact: 'topicMetrics', path: `${topicPath}.excluded`, operator: 'equal', value: false },
+                    { fact: 'topicMetrics', path: [topicPath, '.excluded'].join(''), operator: 'equal', value: false },
                     {
                         any: [
                             {
                                 fact: 'topicMetrics',
-                                path: `${topicPath}.score`,
+                                path: [topicPath, '.score'].join(''),
                                 operator: 'lessThan',
                                 value: TOPIC_SCORE_ASSIGN_THRESHOLD,
                             },
                             {
                                 fact: 'topicMetrics',
-                                path: `${topicPath}.distinctMatches`,
+                                path: [topicPath, '.distinctMatches'].join(''),
                                 operator: 'lessThan',
                                 value: definition.minMatches,
                             },
@@ -763,14 +766,15 @@ export async function replaceArticleTopics(articleId, classification) {
                 terms: (topic.matchedTerms || []).map(match => match.term),
             });
             await run(
-                `INSERT INTO article_topics
-                 (articleId, topicId, score, matchedTermsJson, classificationVersion, createdAt)
-                 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+                [
+                    'INSERT INTO article_topics (articleId, topicId, score, matchedTermsJson, classificationVersion, createdAt)',
+                    "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+                ].join(' '),
                 [normalizedArticleId, topicRow.id, topic.score, matchedTermsJson, classificationVersion],
             );
         }
         await run(
-            `UPDATE articles SET classificationVersion = ?, classificationStatus = 'ready', updatedAt = datetime('now') WHERE id = ?`,
+            "UPDATE articles SET classificationVersion = ?, classificationStatus = 'ready', updatedAt = datetime('now') WHERE id = ?",
             [classificationVersion, normalizedArticleId],
         );
     });
@@ -850,9 +854,11 @@ export async function reprocessTopicClassificationForAllArticles() {
 
     while (true) {
         const articles = await all(
-            `SELECT id, title, teaser, content FROM articles
-             WHERE id > ? AND (classificationStatus <> 'ready' OR classificationVersion IS NULL OR classificationVersion <> ?)
-             ORDER BY id ASC LIMIT 250`,
+            [
+                'SELECT id, title, teaser, content FROM articles',
+                "WHERE id > ? AND (classificationStatus <> 'ready' OR classificationVersion IS NULL OR classificationVersion <> ?)",
+                'ORDER BY id ASC LIMIT 250',
+            ].join(' '),
             [lastArticleId, classificationVersion],
         );
         if (articles.length === 0) break;

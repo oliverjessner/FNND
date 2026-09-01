@@ -1,6 +1,7 @@
 import express from 'express';
 import { all, get, run } from '../database/datenbank.js';
 import { auth } from '../middleware/auth.js';
+import { articleIdsSchema, positiveIdParamsSchema, requestSchema as schema } from '../middleware/validate-request.js';
 import { queryArticles } from '../services/article-queries.js';
 import { getStoredDigestPayload, setDigestClustersCompleted } from '../services/digest-store.js';
 import { normalizeDigestVariant } from './digest.js';
@@ -8,6 +9,41 @@ import { publish } from '../services/events.js';
 import { logInfo } from '../utils/logger.js';
 
 const router = express.Router();
+
+const digestQuerySchema = {
+    type: 'object',
+    properties: {
+        variant: { type: 'string', maxLength: 16 },
+        range: { type: 'string', maxLength: 16 },
+    },
+    additionalProperties: true,
+};
+
+const digestStateBodySchema = {
+    type: 'object',
+    required: ['articleIds'],
+    properties: {
+        articleIds: articleIdsSchema,
+        variant: { type: 'string', maxLength: 16 },
+        completed: { type: 'boolean' },
+    },
+    additionalProperties: true,
+};
+
+const dismissedBodySchema = {
+    type: 'object',
+    properties: {
+        dismissed: { type: 'boolean' },
+    },
+    additionalProperties: true,
+};
+
+const articleIdsBodySchema = {
+    type: 'object',
+    required: ['articleIds'],
+    properties: { articleIds: articleIdsSchema },
+    additionalProperties: true,
+};
 
 function normalizeArticleIds(value) {
     if (!Array.isArray(value)) {
@@ -131,19 +167,16 @@ export async function setArticlesDigestedStateInTransaction(articleIds, digested
     return setDigestClustersCompleted(ids, digested, normalizeDigestVariant(variant));
 }
 
-export async function setArticleDismissedState(articleId, dismissed) {
-    const existing = await get('SELECT id FROM articles WHERE id = ?', [articleId]);
-    if (!existing) {
-        return false;
-    }
-
-    await run(
+export async function setArticleDismissedState(articleId, dismissed, ownerId = 'local-owner') {
+    const result = await run(
         `INSERT INTO article_state (articleId, dismissedAt, createdAt, updatedAt)
-         VALUES (?, CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END, datetime('now'), datetime('now'))
+         SELECT articles.id, CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END, datetime('now'), datetime('now')
+         FROM articles
+         WHERE articles.id = ? AND ? = 'local-owner'
          ON CONFLICT(articleId) DO UPDATE SET dismissedAt = excluded.dismissedAt, updatedAt = datetime('now')`,
-        [articleId, dismissed ? 1 : 0],
+        [dismissed ? 1 : 0, articleId, ownerId],
     );
-    return true;
+    return result.changes > 0;
 }
 
 async function handleDigestRequest(req, res) {
@@ -176,7 +209,7 @@ async function handleSetDismissed(req, res) {
     }
 
     const dismissed = req.body?.dismissed !== false;
-    const updated = await setArticleDismissedState(articleId, dismissed);
+    const updated = await setArticleDismissedState(articleId, dismissed, req.auth.ownerId);
     if (!updated) {
         return res.status(404).json({ error: 'Article not found' });
     }
@@ -200,9 +233,9 @@ router.get('/stats', auth, async (_req, res) => {
     });
 });
 
-router.get('/digest', auth, handleDigestRequest);
-router.post('/digest/state', auth, handleSetDigestState);
-router.patch('/:id/dismissed', auth, handleSetDismissed);
+router.get('/digest', auth, schema.validate({ query: digestQuerySchema }), handleDigestRequest);
+router.post('/digest/state', auth, schema.validate({ body: digestStateBodySchema }), handleSetDigestState);
+router.patch('/:id/dismissed', auth, schema.validate({ params: positiveIdParamsSchema, body: dismissedBodySchema }), handleSetDismissed);
 
 router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, limit = 100, offset = 0, cursorPublishedAt, cursorId } }, res) => {
     if (query) {
@@ -215,14 +248,14 @@ router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, li
     return res.json(articles);
 });
 
-router.post('/lists/bulk', auth, async ({ body }, res) => {
+router.post('/lists/bulk', auth, schema.validate({ body: articleIdsBodySchema }), async ({ body }, res) => {
     const articleIds = normalizeArticleIds(body?.articleIds);
     const payload = await buildArticleListsBulkPayload(articleIds);
 
     return res.json(payload);
 });
 
-router.get('/:id/lists', auth, async ({ params: { id } }, res) => {
+router.get('/:id/lists', auth, schema.validate({ params: positiveIdParamsSchema }), async ({ params: { id } }, res) => {
     const rows = await all(
         `SELECT lists.id, lists.name, lists.color
      FROM list_items
