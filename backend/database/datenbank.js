@@ -104,7 +104,7 @@ export async function initSchema() {
     await run('PRAGMA foreign_keys = ON');
     await run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
 
-    const migrationsDir = path.join(__dirname, '..', '..', 'migrations-v2');
+    const migrationsDir = path.join(__dirname, '..', '..', 'migrations');
     const migrationFiles = (await readdir(migrationsDir))
         .filter(file => /^\d+_.+\.sql$/u.test(file))
         .sort((left, right) => left.localeCompare(right));

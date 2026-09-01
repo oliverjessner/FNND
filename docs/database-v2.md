@@ -16,7 +16,7 @@
 
 ## Schema
 
-The ordered v2 schema starts at [migrations-v2/0001_schema.sql](../migrations-v2/0001_schema.sql).
+The ordered v2 schema starts at [migrations/0001_schema.sql](../migrations/0001_schema.sql). The application applies pending migrations in filename order inside transactions before it starts accepting requests, and records each applied filename in `schema_migrations`.
 
 - `sources` owns source name, website, and logo. `feeds` owns unique feed URLs and references a source.
 - `articles` uses `UNIQUE(feedId, externalId)`, a canonical URL, content hash, UTC timestamps, classification version/status, and a versioned persisted digest fingerprint.

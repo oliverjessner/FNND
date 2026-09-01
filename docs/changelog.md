@@ -1,6 +1,8 @@
 ## 1.0.2
 
 - search in cli
+- random in cli
+- security issues fixed
 
 ## 1.0.1
 

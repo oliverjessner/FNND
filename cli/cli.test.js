@@ -40,9 +40,9 @@ async function createFixtureDatabase(databasePath, { includeFeedNames = true } =
             database.close(error => (error ? reject(error) : resolve()));
         });
 
-    await exec(await readFile(new URL('../migrations-v2/0001_schema.sql', import.meta.url), 'utf8'));
+    await exec(await readFile(new URL('../migrations/0001_schema.sql', import.meta.url), 'utf8'));
     if (includeFeedNames) {
-        await exec(await readFile(new URL('../migrations-v2/0002_feed_names.sql', import.meta.url), 'utf8'));
+        await exec(await readFile(new URL('../migrations/0002_feed_names.sql', import.meta.url), 'utf8'));
     }
 
     const now = new Date();
