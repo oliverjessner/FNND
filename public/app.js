@@ -116,6 +116,10 @@ function setupLiveUpdates() {
             markDigestDirty();
             void settingsModule?.reloadDigestSettings();
         },
+        bullshitRulesUpdated: () => {
+            markFeedDirty();
+            void settingsModule?.reloadBullshitRules();
+        },
         articlesUpdated: () => {
             if (store.digest.pendingMutationEvents > 0) {
                 store.digest.pendingMutationEvents -= 1;

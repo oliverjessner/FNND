@@ -1,5 +1,5 @@
 import { api } from '../api/client.js';
-import { setDigestSettings, setFeeds, setLists, setTopics, store } from '../state/store.js';
+import { setBullshitRules, setDigestSettings, setFeeds, setLists, setTopics, store } from '../state/store.js';
 import { dom } from '../ui/dom.js';
 import { toast } from '../ui/toast.js';
 import { formatDate } from '../utils/format.js';
@@ -21,6 +21,13 @@ function resetListForm() {
 function resetTopicForm() {
     store.settings.topicEditingSlug = null;
     dom.settings.topicForm.reset(); text(dom.settings.topicSubmit, 'save topic'); text(dom.settings.topicStatus, '');
+}
+function resetBullshitRuleForm() {
+    store.settings.bullshitRuleEditingId = null;
+    dom.settings.bullshitForm.reset();
+    dom.settings.bullshitEnabled.checked = true;
+    text(dom.settings.bullshitSubmit, '+ Add rule');
+    text(dom.settings.bullshitFormStatus, '');
 }
 
 function renderFeeds() {
@@ -72,6 +79,32 @@ function renderTopics() {
     dom.settings.topicsState.classList.toggle('hide', store.reference.topics.length > 0);
 }
 
+const bullshitFieldLabels = Object.freeze({ title: 'Title', teaser: 'Teaser', url: 'URL', source: 'Source' });
+const bullshitOperatorLabels = Object.freeze({ contains: 'Contains', not_contains: 'Does not contain', equals: 'Equals', regex: 'Regex' });
+
+function renderBullshitRules() {
+    const fragment = document.createDocumentFragment();
+    for (const rule of store.reference.bullshitRules) {
+        const item = document.createElement('div'); item.className = 'list-item settings-bullshit-item'; item.dataset.ruleId = String(rule.id);
+        const main = document.createElement('div');
+        const title = document.createElement('div'); title.className = 'settings-bullshit-item-title'; title.textContent = rule.name;
+        const meta = document.createElement('div'); meta.className = 'settings-bullshit-item-meta';
+        meta.textContent = `${bullshitFieldLabels[rule.field] || rule.field} · ${bullshitOperatorLabels[rule.operator] || rule.operator} · ${rule.value}`;
+        main.append(title, meta);
+        const actions = document.createElement('div'); actions.className = 'list-actions';
+        const enabled = document.createElement('label'); enabled.className = 'settings-bullshit-enabled';
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = Boolean(rule.enabled); checkbox.dataset.action = 'toggle-bullshit-rule';
+        const enabledText = document.createElement('span'); enabledText.textContent = 'Enabled'; enabled.append(checkbox, enabledText);
+        const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'btn ghost'; edit.textContent = 'Edit'; edit.dataset.action = 'edit-bullshit-rule';
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn danger'; remove.textContent = 'Delete'; remove.dataset.action = 'delete-bullshit-rule';
+        actions.append(enabled, edit, remove); item.append(main, actions); fragment.appendChild(item);
+    }
+    dom.settings.bullshitList.replaceChildren(fragment);
+    const empty = store.reference.bullshitRules.length === 0;
+    text(dom.settings.bullshitState, empty ? 'No bullshit rules yet. Create rules to automatically identify noisy or unwanted articles.' : '');
+    dom.settings.bullshitState.classList.toggle('hide', !empty);
+}
+
 function renderDigestSettings() {
     const excluded = new Set(store.reference.digestSettings.excludedFeedIds.map(Number));
     const feeds = document.createDocumentFragment();
@@ -99,15 +132,16 @@ function renderDigestSettings() {
 
 export function refreshSettingsReferences() {
     if (!initialized) return;
-    renderFeeds(); renderLists(); renderTopics(); renderDigestSettings();
+    renderFeeds(); renderLists(); renderTopics(); renderBullshitRules(); renderDigestSettings();
 }
 
 async function reloadFeeds() { setFeeds(await api.feeds()); refreshSettingsReferences(); await onReferencesChanged(); }
 async function reloadLists() { setLists(await api.lists()); refreshSettingsReferences(); await onReferencesChanged(); }
 async function reloadTopics() { const payload = await api.topics(); setTopics(payload?.topics); refreshSettingsReferences(); await onReferencesChanged(); }
+export async function reloadBullshitRules() { setBullshitRules(await api.bullshitRules()); if (initialized) renderBullshitRules(); }
 
 async function loadSettingsOnlyData() {
-    const [digestResult, rulesResult, statusResult, statsResult] = await Promise.allSettled([api.digestSettings(), api.topicRules(), api.fetchStatus(), api.articleStats()]);
+    const [digestResult, rulesResult, statusResult, statsResult, bullshitResult] = await Promise.allSettled([api.digestSettings(), api.topicRules(), api.fetchStatus(), api.articleStats(), api.bullshitRules()]);
     if (digestResult.status === 'fulfilled') { setDigestSettings(digestResult.value); renderDigestSettings(); }
     else text(dom.settings.digestFeedsState, `Error: ${digestResult.reason.message}`);
     if (rulesResult.status === 'fulfilled') dom.settings.topicsJson.value = rulesResult.value?.raw || JSON.stringify(rulesResult.value?.rules || {}, null, 2);
@@ -117,6 +151,8 @@ async function loadSettingsOnlyData() {
         text(dom.settings.fetchStatus, value?.at ? `Last fetch: ${formatDate(value.at)}${value.error ? ` (Error: ${value.error})` : ` (${value.totalNew} new)`}` : 'Last fetch: —');
     }
     if (statsResult.status === 'fulfilled') text(dom.settings.articleCount, `Saved articles: ${Number(statsResult.value?.total || 0).toLocaleString('de-DE')}`);
+    if (bullshitResult.status === 'fulfilled') { setBullshitRules(bullshitResult.value); renderBullshitRules(); }
+    else text(dom.settings.bullshitState, `Error: ${bullshitResult.reason.message}`);
 }
 
 export async function reloadDigestSettings() {
@@ -140,6 +176,23 @@ export async function refreshSettingsMeta() {
 function topicPayload() {
     const split = value => String(value || '').split(/[\n,]/).map(item => item.trim()).filter(Boolean);
     return { slug: dom.settings.topicSlug.value.trim(), label: dom.settings.topicLabel.value.trim(), strong: split(dom.settings.topicStrong.value), medium: split(dom.settings.topicMedium.value), weak: split(dom.settings.topicWeak.value) };
+}
+
+function bullshitRulePayload() {
+    return {
+        name: dom.settings.bullshitName.value.trim(),
+        field: dom.settings.bullshitField.value,
+        operator: dom.settings.bullshitOperator.value,
+        value: dom.settings.bullshitValue.value.trim(),
+        enabled: dom.settings.bullshitEnabled.checked,
+    };
+}
+
+function bullshitReevaluationText(result) {
+    const value = result?.reEvaluation || result || {};
+    const articleCount = Number(value.matchedArticles || 0);
+    const ruleCount = Number(value.matchedRules || 0);
+    return `${articleCount.toLocaleString('en-US')} ${articleCount === 1 ? 'article' : 'articles'} matched ${ruleCount.toLocaleString('en-US')} bullshit ${ruleCount === 1 ? 'rule' : 'rules'}`;
 }
 
 function confirmDeletion(type, label) {
@@ -212,6 +265,83 @@ function bindTopicActions() {
     dom.settings.topicsReprocess.addEventListener('click', async () => { dom.settings.topicsReprocess.disabled = true; text(dom.settings.topicsReprocessStatus, 'Reprocessing…'); try { const result = await api.reprocessTopics(); text(dom.settings.topicsReprocessStatus, ['Done: ', result.processed, ' processed · ', result.assignedArticles, ' with topics · ', result.topicAssignments, ' assignments'].join('')); } catch (error) { text(dom.settings.topicsReprocessStatus, `Error: ${error.message}`); } finally { dom.settings.topicsReprocess.disabled = false; } });
 }
 
+function bindBullshitRuleActions() {
+    dom.settings.bullshitForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const payload = bullshitRulePayload();
+        if (!payload.name || !payload.value) { text(dom.settings.bullshitFormStatus, 'Name and value are required.'); return; }
+        if (payload.operator === 'regex') {
+            try { new RegExp(payload.value, 'iu'); }
+            catch { text(dom.settings.bullshitFormStatus, 'Invalid regular expression.'); return; }
+        }
+        dom.settings.bullshitSubmit.disabled = true;
+        text(dom.settings.bullshitFormStatus, 'Re-evaluating articles…');
+        try {
+            const result = store.settings.bullshitRuleEditingId
+                ? await api.updateBullshitRule(store.settings.bullshitRuleEditingId, payload)
+                : await api.createBullshitRule(payload);
+            resetBullshitRuleForm();
+            await reloadBullshitRules();
+            text(dom.settings.bullshitFormStatus, bullshitReevaluationText(result));
+            await onFeedChanged();
+        } catch (error) {
+            text(dom.settings.bullshitFormStatus, `Error: ${error.message}`);
+        } finally {
+            dom.settings.bullshitSubmit.disabled = false;
+        }
+    });
+    dom.settings.bullshitCancel.addEventListener('click', resetBullshitRuleForm);
+    dom.settings.bullshitList.addEventListener('click', async event => {
+        const action = event.target.closest('[data-action]');
+        const id = Number(action?.closest('[data-rule-id]')?.dataset.ruleId);
+        const rule = store.reference.bullshitRulesById.get(id);
+        if (!action || !rule || action.dataset.action === 'toggle-bullshit-rule') return;
+        if (action.dataset.action === 'edit-bullshit-rule') {
+            store.settings.bullshitRuleEditingId = id;
+            dom.settings.bullshitName.value = rule.name;
+            dom.settings.bullshitField.value = rule.field;
+            dom.settings.bullshitOperator.value = rule.operator;
+            dom.settings.bullshitValue.value = rule.value;
+            dom.settings.bullshitEnabled.checked = Boolean(rule.enabled);
+            text(dom.settings.bullshitSubmit, 'Save changes');
+            text(dom.settings.bullshitFormStatus, `Editing rule: ${rule.name}`);
+        }
+        if (action.dataset.action === 'delete-bullshit-rule' && confirmDeletion('rule', rule.name)) {
+            action.disabled = true; text(dom.settings.bullshitReevaluateStatus, 'Re-evaluating articles…');
+            try {
+                const result = await api.deleteBullshitRule(id);
+                if (store.settings.bullshitRuleEditingId === id) resetBullshitRuleForm();
+                await reloadBullshitRules();
+                text(dom.settings.bullshitReevaluateStatus, bullshitReevaluationText(result));
+                await onFeedChanged();
+            } catch (error) { action.disabled = false; toast.error(error.message); }
+        }
+    });
+    dom.settings.bullshitList.addEventListener('change', async event => {
+        const checkbox = event.target.closest('[data-action="toggle-bullshit-rule"]');
+        const id = Number(checkbox?.closest('[data-rule-id]')?.dataset.ruleId);
+        if (!checkbox || !id) return;
+        checkbox.disabled = true; text(dom.settings.bullshitReevaluateStatus, 'Re-evaluating articles…');
+        try {
+            const result = await api.updateBullshitRule(id, { enabled: checkbox.checked });
+            await reloadBullshitRules();
+            text(dom.settings.bullshitReevaluateStatus, bullshitReevaluationText(result));
+            await onFeedChanged();
+        } catch (error) {
+            checkbox.checked = !checkbox.checked; checkbox.disabled = false; toast.error(error.message);
+        }
+    });
+    dom.settings.bullshitReevaluate.addEventListener('click', async () => {
+        dom.settings.bullshitReevaluate.disabled = true; text(dom.settings.bullshitReevaluateStatus, 'Re-evaluating articles…');
+        try {
+            const result = await api.reevaluateBullshitRules();
+            text(dom.settings.bullshitReevaluateStatus, bullshitReevaluationText(result));
+            await onFeedChanged();
+        } catch (error) { text(dom.settings.bullshitReevaluateStatus, `Error: ${error.message}`); }
+        finally { dom.settings.bullshitReevaluate.disabled = false; }
+    });
+}
+
 function bindDigestSettings() {
     dom.settings.digestFeedsSave.addEventListener('click', async () => {
         const ids = [...dom.settings.digestFeedsList.querySelectorAll('[data-feed-id]:checked')].map(input => Number(input.dataset.feedId)); dom.settings.digestFeedsSave.disabled = true;
@@ -233,7 +363,7 @@ export async function initSettings(options = {}) {
     if (initialized) return;
     initialized = true; store.settings.initialized = true;
     onReferencesChanged = options.onReferencesChanged || onReferencesChanged; onFeedChanged = options.onFeedChanged || onFeedChanged; onDigestChanged = options.onDigestChanged || onDigestChanged;
-    bindTabs(); bindFeedActions(); bindListActions(); bindTopicActions(); bindDigestSettings(); bindFetch();
+    bindTabs(); bindFeedActions(); bindListActions(); bindTopicActions(); bindBullshitRuleActions(); bindDigestSettings(); bindFetch();
     refreshSettingsReferences(); await loadSettingsOnlyData();
 }
 

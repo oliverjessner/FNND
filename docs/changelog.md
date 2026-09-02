@@ -1,6 +1,7 @@
 ## 1.0.3
 
 - Export feed with active search criteria and export digest
+- Bullshit filter
 
 ## 1.0.2
 

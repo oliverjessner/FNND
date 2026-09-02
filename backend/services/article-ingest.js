@@ -3,6 +3,8 @@ import { get, run, transaction } from '../database/datenbank.js';
 import { canonicalizeArticleUrl, createDigestFingerprint } from '../routes/digest.js';
 import { getDigestPeriodsForArticle, getDigestTimezone, isPeriodInsideRebuildWindow } from './digest-periods.js';
 import { classifyAndPersistArticleTopics, getActiveTopicRulesVersion } from './topics.js';
+import { evaluateAndPersistArticleBullshit } from './bullshit-rules.js';
+import { logWarn } from '../utils/logger.js';
 
 export const DIGEST_ALGORITHM_VERSION = 'digest-v2.1';
 export const DIGEST_FINGERPRINT_VERSION = 'fingerprint-v1';
@@ -141,13 +143,22 @@ export async function ingestArticle(input) {
         return { id: articleId, inserted: !existing, changed: true, affectedPeriodIds };
     });
 
+    let classificationError = null;
     if (persisted.changed || persisted.needsClassification) {
         try {
             await classifyAndPersistArticleTopics({ id: persisted.id, ...article });
         } catch (error) {
             await run("UPDATE articles SET classificationStatus = 'failed', updatedAt = datetime('now') WHERE id = ?", [persisted.id]);
-            throw error;
+            classificationError = error;
         }
     }
+    if (persisted.changed) {
+        try {
+            await evaluateAndPersistArticleBullshit({ id: persisted.id, ...article });
+        } catch (error) {
+            logWarn('Bullshit rule evaluation failed during ingest', { articleId: persisted.id, error: error.message });
+        }
+    }
+    if (classificationError) throw classificationError;
     return { ...persisted, article };
 }

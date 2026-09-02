@@ -16,6 +16,8 @@ export const store = {
         listsById: new Map(),
         topics: [],
         topicsBySlug: new Map(),
+        bullshitRules: [],
+        bullshitRulesById: new Map(),
         digestSettings: { excludedFeedIds: [], blockedWords: [] },
     },
     feed: {
@@ -47,6 +49,7 @@ export const store = {
         feedEditingId: null,
         listEditingId: null,
         topicEditingSlug: null,
+        bullshitRuleEditingId: null,
     },
     ui: {
         activeView: 'main',
@@ -75,6 +78,11 @@ export function setLists(lists) {
 export function setTopics(topics) {
     store.reference.topics = Array.isArray(topics) ? topics : [];
     store.reference.topicsBySlug = new Map(store.reference.topics.map(topic => [String(topic.slug), topic]));
+}
+
+export function setBullshitRules(rules) {
+    store.reference.bullshitRules = Array.isArray(rules) ? rules : [];
+    store.reference.bullshitRulesById = new Map(store.reference.bullshitRules.map(rule => [Number(rule.id), rule]));
 }
 
 export function setDigestSettings(settings) {

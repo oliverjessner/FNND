@@ -58,6 +58,11 @@
                         <select id="filter-list" class="select" aria-label="Filter by list">
                             <option value="">List: All</option>
                         </select>
+                        <select id="filter-bullshit" class="select" aria-label="Filter by bullshit status">
+                            <option value="all">Bullshit: All</option>
+                            <option value="clean">Bullshit: Clean</option>
+                            <option value="bullshit">Bullshit: Bullshit</option>
+                        </select>
                         <div id="toggle-layout" class="view-toggle" role="group" aria-label="Feed layout">
                             <button class="view-toggle-option" data-layout="list" type="button" aria-pressed="false">Compact</button>
                             <button class="view-toggle-option is-active" data-layout="cards" type="button" aria-pressed="true">Cards</button>
@@ -261,6 +266,7 @@
                             Add new RSS Feeds
                         </button>
                         <button class="settings-tab" data-settings="topics" type="button">Topics</button>
+                        <button class="settings-tab" data-settings="bullshit" type="button">Bullshit Rules</button>
                         <button class="settings-tab" data-settings="lists" type="button">Lists</button>
                         <button class="settings-tab" data-settings="digest" type="button">Digest</button>
                         <button class="settings-tab" data-settings="cosmetics" type="button">Cosmetics</button>
@@ -299,6 +305,63 @@
                     <div class="settings-feeds-content">
                         <div id="feeds-state" class="state">Loading…</div>
                         <div id="feeds-list" class="list"></div>
+                    </div>
+                </div>
+
+                <div id="settings-bullshit" class="settings-panel">
+                    <div class="settings-bullshit-left">
+                        <form id="bullshit-rule-form" class="card form">
+                            <h3 class="title">Bullshit Rules</h3>
+                            <p class="teaser">Automatically mark noisy or unwanted articles using local rules.</p>
+                            <div class="form-row">
+                                <label for="bullshit-rule-name">Name</label>
+                                <input type="text" id="bullshit-rule-name" placeholder="e.g. Black Friday" maxlength="200" required />
+                            </div>
+                            <div class="form-row">
+                                <label for="bullshit-rule-field">Field</label>
+                                <select id="bullshit-rule-field" class="select">
+                                    <option value="title">Title</option>
+                                    <option value="teaser">Teaser</option>
+                                    <option value="url">URL</option>
+                                    <option value="source">Source</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="bullshit-rule-operator">Operator</label>
+                                <select id="bullshit-rule-operator" class="select">
+                                    <option value="contains">Contains</option>
+                                    <option value="not_contains">Does not contain</option>
+                                    <option value="equals">Equals</option>
+                                    <option value="regex">Regex</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="bullshit-rule-value">Value</label>
+                                <input type="text" id="bullshit-rule-value" placeholder="e.g. Black Friday" maxlength="500" required />
+                            </div>
+                            <label class="settings-checkbox-row" for="bullshit-rule-enabled">
+                                <input type="checkbox" id="bullshit-rule-enabled" checked />
+                                <span>Enabled</span>
+                            </label>
+                            <div class="form-actions">
+                                <button type="submit" class="btn success" id="bullshit-rule-submit">+ Add rule</button>
+                                <button type="button" class="btn ghost" id="bullshit-rule-cancel">cancel</button>
+                            </div>
+                            <div id="bullshit-rule-form-status" class="form-status"></div>
+                        </form>
+                    </div>
+
+                    <div class="settings-bullshit-content">
+                        <section class="card settings-bullshit-reprocess-card">
+                            <h3 class="title">Re-evaluate Articles</h3>
+                            <p class="teaser">Re-run all enabled local rules against existing articles.</p>
+                            <div class="form-actions">
+                                <button type="button" class="btn" id="bullshit-rules-reevaluate">re-evaluate articles</button>
+                            </div>
+                            <div id="bullshit-rules-reevaluate-status" class="form-status"></div>
+                        </section>
+                        <div id="bullshit-rules-state" class="state">Loading…</div>
+                        <div id="bullshit-rules-list" class="list"></div>
                     </div>
                 </div>
 

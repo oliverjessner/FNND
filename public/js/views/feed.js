@@ -21,6 +21,7 @@ function requestKey() {
         listId: dom.feed.listFilter.value,
         topic: dom.feed.topicFilter.value,
         query: normalizeSearch(dom.feed.search.value, CONFIG.MAX_SEARCH_QUERY_LENGTH),
+        bullshit: dom.feed.bullshitFilter.value,
     }).toString();
 }
 
@@ -37,6 +38,7 @@ function exportSnapshot() {
             topic,
             source,
             listId: params.get('listId'),
+            bullshit: params.get('bullshit') === 'all' ? null : params.get('bullshit'),
         },
         filterLabels: { topic, source, list },
     };
@@ -79,6 +81,7 @@ function activeFilters() {
     if (dom.feed.topicFilter.value) filters.push(['topic', filterLabel(dom.feed.topicFilter, 'Topic')]);
     if (dom.feed.sourceFilter.value) filters.push(['source', filterLabel(dom.feed.sourceFilter, 'Source')]);
     if (dom.feed.listFilter.value) filters.push(['list', filterLabel(dom.feed.listFilter, 'List')]);
+    if (dom.feed.bullshitFilter.value !== 'all') filters.push(['bullshit', filterLabel(dom.feed.bullshitFilter, 'Bullshit')]);
     return filters;
 }
 
@@ -111,7 +114,7 @@ function renderArticles(articles, { append = false, key = '' } = {}) {
     }
     if (append) dom.feed.list.appendChild(fragment); else dom.feed.list.replaceChildren(fragment);
     store.feed.requestKey = key; store.feed.fingerprint = fingerprint;
-    if (!articles.length) { text(dom.feed.state, 'Nothing found, try other search input or delete all'); show(dom.feed.state); }
+    if (!articles.length) { text(dom.feed.state, dom.feed.bullshitFilter.value === 'bullshit' ? 'No bullshit found.' : 'Nothing found, try other search input or delete all'); show(dom.feed.state); }
     else hide(dom.feed.state);
     renderViewer();
 }
@@ -212,11 +215,12 @@ async function clearFilter(key) {
     if (key === 'topic') dom.feed.topicFilter.value = '';
     if (key === 'source') dom.feed.sourceFilter.value = '';
     if (key === 'list') dom.feed.listFilter.value = '';
+    if (key === 'bullshit') dom.feed.bullshitFilter.value = 'all';
     renderFilterChips(); await loadArticles({ force: true });
 }
 
 async function clearFilters() {
-    dom.feed.search.value = ''; dom.feed.topicFilter.value = ''; dom.feed.sourceFilter.value = ''; dom.feed.listFilter.value = '';
+    dom.feed.search.value = ''; dom.feed.topicFilter.value = ''; dom.feed.sourceFilter.value = ''; dom.feed.listFilter.value = ''; dom.feed.bullshitFilter.value = 'all';
     renderFilterChips(); await loadArticles({ force: true });
 }
 
@@ -229,7 +233,7 @@ function bindEvents() {
     });
     const search = debounce(() => void loadArticles({ showLoading: false, force: true }), CONFIG.SEARCH_DEBOUNCE_MS);
     dom.feed.search.addEventListener('input', () => { renderFilterChips(); search(); });
-    [dom.feed.topicFilter, dom.feed.sourceFilter, dom.feed.listFilter].forEach(select => select.addEventListener('change', () => void loadArticles({ force: true })));
+    [dom.feed.topicFilter, dom.feed.sourceFilter, dom.feed.listFilter, dom.feed.bullshitFilter].forEach(select => select.addEventListener('change', () => void loadArticles({ force: true })));
     dom.feed.clearFilters.addEventListener('click', () => void clearFilters());
     dom.feed.filterChips.addEventListener('click', event => { const chip = event.target.closest('[data-filter-key]'); if (chip) void clearFilter(chip.dataset.filterKey); });
     dom.feed.loadMore.addEventListener('click', () => void loadArticles({ append: true, showLoading: false }));

@@ -784,6 +784,20 @@ input::placeholder {
     font-size: var(--font-size-sm);
 }
 
+.article-bullshit-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-2) var(--space-8);
+    border: var(--border-width-default) solid rgba(240, 178, 76, 0.18);
+    border-radius: var(--radius-pill);
+    color: color-mix(in srgb, var(--color-text-muted) 82%, var(--color-text-accent) 18%);
+    background: rgba(240, 178, 76, 0.055);
+    font-size: 0.7rem;
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.02em;
+    cursor: help;
+}
+
 .feed-heading-meta {
     display: flex;
     align-items: center;
@@ -2034,6 +2048,12 @@ input::placeholder {
     margin-block-start: var(--space-14);
 }
 
+.form-row > .select {
+    inline-size: 100%;
+    min-inline-size: 0;
+    flex: 0 0 auto;
+}
+
 .textarea {
     min-block-size: 5rem;
     resize: vertical;
@@ -2126,6 +2146,60 @@ input::placeholder {
     flex-direction: column;
     gap: var(--margin-modal-status-gap);
     min-inline-size: 0;
+}
+
+:is(.settings-bullshit-left, .settings-bullshit-content) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--margin-modal-status-gap);
+    min-inline-size: 0;
+}
+
+.settings-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-10);
+    margin-block-start: var(--space-18);
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.settings-checkbox-row input {
+    inline-size: 1rem;
+    block-size: 1rem;
+    accent-color: var(--color-text-accent);
+}
+
+.settings-bullshit-item {
+    align-items: flex-start;
+}
+
+.settings-bullshit-item-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-8);
+    font-weight: var(--font-weight-semibold);
+}
+
+.settings-bullshit-item-meta {
+    margin-block-start: var(--space-8);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+.settings-bullshit-enabled {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-8);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.settings-bullshit-enabled input {
+    accent-color: var(--color-text-accent);
 }
 
 .settings-cosmetics-content {

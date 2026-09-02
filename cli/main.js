@@ -49,6 +49,7 @@ export async function runCli(
         if (!schema) throw new Error('Database schema v2 is required; use data-v2.db or restore the legacy archive separately.');
         const feedColumns = await database.all('PRAGMA table_info(feeds)');
         database.feedNamesAvailable = feedColumns.some(column => column.name === 'name');
+        database.bullshitRulesAvailable = Boolean(await database.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'article_bullshit_matches'"));
 
         if (command.command === 'rss') {
             const feeds = await readStoredFeeds(database);

@@ -27,5 +27,5 @@ export function isAbortError(error) {
 
 export function fingerprintArticles(articles) {
     if (!articles?.length) return 'empty';
-    return articles.map(article => [article.id, article.feedId, article.publishedAt, article.title, article.teaser, article.url, Boolean(article.saved), (article.topics || []).map(topic => `${topic.slug}:${topic.score}`).join(',')].join('|')).join('||');
+    return articles.map(article => [article.id, article.feedId, article.publishedAt, article.title, article.teaser, article.url, Boolean(article.saved), Boolean(article.bullshit), (article.bullshitRules || []).join(','), (article.topics || []).map(topic => `${topic.slug}:${topic.score}`).join(',')].join('|')).join('||');
 }

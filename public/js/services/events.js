@@ -13,6 +13,7 @@ export function initEvents(handlers = {}) {
             else if (name === 'lists.items.updated') handlers.listItemsUpdated?.(payload.data);
             else if (name === 'topics.updated' || name === 'topics.reprocessed') handlers.topicsUpdated?.(payload.data);
             else if (name === 'digest.settings.updated') handlers.digestSettingsUpdated?.(payload.data);
+            else if (name === 'bullshit-rules.updated') handlers.bullshitRulesUpdated?.(payload.data);
             else if (name === 'articles.updated' || name.startsWith('webhook.')) handlers.articlesUpdated?.(payload.data);
         } catch {
             // Ignore malformed events; the next valid event can still refresh the UI.

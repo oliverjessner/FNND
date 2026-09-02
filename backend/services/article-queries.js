@@ -1,4 +1,5 @@
 import { mapArticleRow } from '../routes/digest.js';
+import { loadBullshitMatchesByArticleIds } from './bullshit-rules.js';
 
 function normalizeArticleIds(value) {
     if (!Array.isArray(value)) {
@@ -86,14 +87,18 @@ export async function queryArticles(
         maxLimit = 250,
         cursorPublishedAt,
         cursorId,
+        bullshit = 'all',
     } = {},
-    { all, feedNamesAvailable = true },
+    { all, feedNamesAvailable = true, bullshitRulesAvailable = true },
 ) {
     const params = [];
     const whereParts = [];
     const sourceNameExpression = feedNamesAvailable
         ? "COALESCE(NULLIF(feeds.name, ''), sources.name)"
         : 'sources.name';
+    const bullshitExpression = bullshitRulesAvailable
+        ? 'EXISTS (SELECT 1 FROM article_bullshit_matches WHERE article_bullshit_matches.articleId = articles.id)'
+        : '0';
 
     if (feedId) {
         whereParts.push('feeds.id = ?');
@@ -132,6 +137,14 @@ export async function queryArticles(
     if (activeOnly) {
         whereParts.push('article_state.dismissedAt IS NULL');
     }
+    const normalizedBullshit = String(bullshit || 'all').trim().toLowerCase();
+    if (normalizedBullshit === 'clean' && bullshitRulesAvailable) {
+        whereParts.push('NOT EXISTS (SELECT 1 FROM article_bullshit_matches WHERE article_bullshit_matches.articleId = articles.id)');
+    } else if (normalizedBullshit === 'bullshit') {
+        whereParts.push(bullshitRulesAvailable
+            ? 'EXISTS (SELECT 1 FROM article_bullshit_matches WHERE article_bullshit_matches.articleId = articles.id)'
+            : '0 = 1');
+    }
     if (cursorPublishedAt && Number.isInteger(Number(cursorId)) && Number(cursorId) > 0) {
         whereParts.push('(articles.publishedAt < ? OR (articles.publishedAt = ? AND articles.id < ?))');
         params.push(cursorPublishedAt, cursorPublishedAt, Number(cursorId));
@@ -152,7 +165,8 @@ export async function queryArticles(
         sourceNameExpression,
         `AS sourceName,
          sources.logo IS NOT NULL AS hasSourceLogo,
-         EXISTS (SELECT 1 FROM list_items WHERE list_items.articleId = articles.id) AS saved`,
+         EXISTS (SELECT 1 FROM list_items WHERE list_items.articleId = articles.id) AS saved,
+         ${bullshitExpression} AS bullshit`,
     ].join('\n');
     const sql = [
         selectColumns,
@@ -169,18 +183,19 @@ export async function queryArticles(
     params.push(normalizedLimit, normalizedOffset);
 
     const rows = await all(sql, params);
-    const mapped = rows.map(mapArticleRow);
-    if (!includeTopics) {
-        return mapped;
-    }
+    const mapped = rows.map(row => ({ ...mapArticleRow(row), bullshit: Boolean(row.bullshit) }));
 
     const articleIds = mapped
         .map(article => Number(article.id))
         .filter(articleId => Number.isInteger(articleId) && articleId > 0);
-    const topicsByArticleId = await loadTopicsByArticleIds(articleIds, { all });
+    const [topicsByArticleId, bullshitMatchesByArticleId] = await Promise.all([
+        includeTopics ? loadTopicsByArticleIds(articleIds, { all }) : Promise.resolve(new Map()),
+        bullshitRulesAvailable ? loadBullshitMatchesByArticleIds(articleIds, { all }) : Promise.resolve(new Map()),
+    ]);
 
     return mapped.map(article => ({
         ...article,
-        topics: topicsByArticleId.get(Number(article.id)) || [],
+        ...(includeTopics ? { topics: topicsByArticleId.get(Number(article.id)) || [] } : {}),
+        bullshitRules: (bullshitMatchesByArticleId.get(Number(article.id)) || []).map(rule => rule.name),
     }));
 }

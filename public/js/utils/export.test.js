@@ -45,11 +45,12 @@ test('feed search and topic filters are combined on every export request', async
     assert.equal(calls[0].get('topic'), 'ai');
 });
 
-test('feed source and list filters are forwarded together', async () => {
+test('feed source, list, and bullshit filters are forwarded together', async () => {
     const calls = [];
-    await fetchAllFeedArticles(params => { calls.push(new URLSearchParams(params)); return []; }, new URLSearchParams({ feedId: '12', listId: '4' }));
+    await fetchAllFeedArticles(params => { calls.push(new URLSearchParams(params)); return []; }, new URLSearchParams({ feedId: '12', listId: '4', bullshit: 'clean' }));
     assert.equal(calls[0].get('feedId'), '12');
     assert.equal(calls[0].get('listId'), '4');
+    assert.equal(calls[0].get('bullshit'), 'clean');
 });
 
 test('feed export traverses beyond the first 100 articles with keyset pagination', async () => {
@@ -74,8 +75,20 @@ test('feed JSON contains the exact filter metadata snapshot', () => {
         exportedAt: EXPORTED_AT,
     });
     const payload = JSON.parse(artifact.content);
-    assert.deepEqual(payload.filters, { query: 'Nvidia', topic: 'AI', source: 'Golem', listId: 4 });
+    assert.deepEqual(payload.filters, { query: 'Nvidia', topic: 'AI', source: 'Golem', listId: 4, bullshit: null });
     assert.equal(artifact.filename, 'no-bullshit-rss-feed-nvidia-2026-09-02.json');
+});
+
+test('feed JSON includes the bullshit filter and article match reasons', () => {
+    const artifact = createFeedExport('json', {
+        articles: [article(1, { bullshit: true, bullshitRules: ['Black Friday', 'Deals'] })],
+        filters: { bullshit: 'clean' },
+        exportedAt: EXPORTED_AT,
+    });
+    const payload = JSON.parse(artifact.content);
+    assert.equal(payload.filters.bullshit, 'clean');
+    assert.equal(payload.articles[0].bullshit, true);
+    assert.deepEqual(payload.articles[0].bullshitRules, ['Black Friday', 'Deals']);
 });
 
 test('feed CSV correctly escapes commas, quotes, and line breaks', () => {

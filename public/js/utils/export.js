@@ -54,6 +54,8 @@ function articleForExport(article) {
         sourceName: textValue(article?.sourceName, 'Unknown source'),
         publishedAt: article?.publishedAt || null,
         topics: topicLabels(article?.topics),
+        bullshit: Boolean(article?.bullshit),
+        bullshitRules: (Array.isArray(article?.bullshitRules) ? article.bullshitRules : []).map(rule => singleLine(rule)).filter(Boolean),
     };
 }
 
@@ -133,6 +135,7 @@ function feedMarkdown(articles, filters, filterLabels, exportedAt) {
     if (filters.topic) lines.push(`Topic: ${singleLine(filterLabels.topic || filters.topic)}`);
     if (filters.source) lines.push(`Source: ${singleLine(filterLabels.source || filters.source)}`);
     if (filters.listId) lines.push(`List: ${singleLine(filterLabels.list || filters.listId)}`);
+    if (filters.bullshit) lines.push(`Bullshit: ${singleLine(filters.bullshit)}`);
 
     for (const article of articles) {
         lines.push('', `## ${singleLine(article.title)}`, '', `Source: ${singleLine(article.sourceName)}`, `Published: ${localDateTime(article.publishedAt)}`);
@@ -162,6 +165,7 @@ export function createFeedExport(format, { articles = [], filters = {}, filterLa
         topic: filters.topic || null,
         source: filters.source || null,
         listId: filters.listId ? Number(filters.listId) || String(filters.listId) : null,
+        bullshit: filters.bullshit || null,
     };
     let content;
     if (format === 'markdown') content = feedMarkdown(normalizedArticles, normalizedFilters, filterLabels, exportedAt);

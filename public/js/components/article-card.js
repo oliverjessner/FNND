@@ -17,6 +17,17 @@ export function createArticleCard(article, template, activeTopic = '') {
         date.title = formatDate(article.publishedAt);
     }
 
+    if (article?.bullshit) {
+        const ruleNames = Array.isArray(article?.bullshitRules) ? article.bullshitRules.filter(Boolean) : [];
+        const chip = document.createElement('span');
+        chip.className = 'article-bullshit-chip';
+        chip.textContent = 'Bullshit';
+        const reasons = ruleNames.length ? `Matched rules:\n- ${ruleNames.join('\n- ')}` : 'Matched by a bullshit rule';
+        chip.title = reasons;
+        chip.setAttribute('aria-label', reasons.replace(/\n/g, ' '));
+        fragment.querySelector('.meta').appendChild(chip);
+    }
+
     const source = fragment.querySelector('.meta-source');
     const sourceLogo = fragment.querySelector('.source-logo');
     fragment.querySelector('.source-name').textContent = article?.sourceName || '—';

@@ -7,6 +7,7 @@ import feedsRouter from './routes/feeds.js';
 import articlesRouter from './routes/articles.js';
 import listsRouter from './routes/lists.js';
 import digestSettingsRouter from './routes/digest-settings.js';
+import bullshitRulesRouter from './routes/bullshit-rules.js';
 import topicsRouter from './routes/topics.js';
 import webhookRouter from './routes/webhook.js';
 import { auth, requireLocalApiClient } from './middleware/auth.js';
@@ -129,6 +130,7 @@ app.use('/api/feeds', feedsRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/lists', listsRouter);
 app.use('/api/digest-settings', digestSettingsRouter);
+app.use('/api/bullshit-rules', bullshitRulesRouter);
 app.use('/api/topics', topicsRouter);
 app.use('/api/webhook', webhookRouter);
 
