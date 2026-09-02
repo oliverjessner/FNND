@@ -15,6 +15,7 @@ import {
     refreshFeedReferences,
     searchFromSelection,
 } from './js/views/feed.js';
+import { initFeedImport } from './js/views/feed-import.js';
 
 const controllers = new Map([
     ['main', { activate: activateFeed, deactivate: deactivateFeed }],
@@ -137,6 +138,14 @@ async function init() {
     initModal({
         onSaved: async () => {
             markFeedDirty();
+            if (store.ui.activeView === 'main') await loadArticles({ force: true, showLoading: false });
+        },
+    });
+    initFeedImport({
+        onImported: async () => {
+            await refreshReferences('feeds');
+            markFeedDirty();
+            markDigestDirty();
             if (store.ui.activeView === 'main') await loadArticles({ force: true, showLoading: false });
         },
     });

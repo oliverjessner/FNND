@@ -1,7 +1,8 @@
-## 1.0.3
+## 1.1.0 Improve the datasets
 
 - Export feed with active search criteria and export digest
 - Bullshit filter
+- import button
 
 ## 1.0.2
 

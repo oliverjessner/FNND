@@ -9,6 +9,7 @@ export async function readStoredFeeds(database) {
         `AS name, feeds.feedUrl, sources.websiteUrl
          FROM feeds
          JOIN sources ON sources.id = feeds.sourceId
+         WHERE feeds.feedUrl NOT LIKE 'nbs-import:%'
          ORDER BY feeds.id ASC`,
     ].join('\n');
 

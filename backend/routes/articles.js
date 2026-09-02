@@ -7,6 +7,7 @@ import { getStoredDigestPayload, setDigestClustersCompleted } from '../services/
 import { normalizeDigestVariant } from './digest.js';
 import { publish } from '../services/events.js';
 import { logInfo } from '../utils/logger.js';
+import { importArticlesFromUrls } from '../services/article-import.js';
 
 const router = express.Router();
 
@@ -43,6 +44,20 @@ const articleIdsBodySchema = {
     required: ['articleIds'],
     properties: { articleIds: articleIdsSchema },
     additionalProperties: true,
+};
+
+const articleImportBodySchema = {
+    type: 'object',
+    required: ['urls'],
+    properties: {
+        urls: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 500,
+            items: { type: 'string', minLength: 1, maxLength: 2_048 },
+        },
+    },
+    additionalProperties: false,
 };
 
 function normalizeArticleIds(value) {
@@ -235,6 +250,12 @@ router.get('/stats', auth, async (_req, res) => {
 
 router.get('/digest', auth, schema.validate({ query: digestQuerySchema }), handleDigestRequest);
 router.post('/digest/state', auth, schema.validate({ body: digestStateBodySchema }), handleSetDigestState);
+router.post('/import', auth, schema.validate({ body: articleImportBodySchema }), async ({ body }, res) => {
+    const result = await importArticlesFromUrls(body.urls);
+    publish('articles.updated', { source: 'import', ...result });
+    publish('feeds.updated', { source: 'import' });
+    return res.status(result.imported > 0 ? 201 : 200).json({ ok: true, ...result });
+});
 router.patch('/:id/dismissed', auth, schema.validate({ params: positiveIdParamsSchema, body: dismissedBodySchema }), handleSetDismissed);
 
 router.get('/', auth, async ({ query: { feedId, source, listId, topic, query, bullshit = 'all', limit = 100, offset = 0, cursorPublishedAt, cursorId } }, res) => {

@@ -31,8 +31,9 @@ function resetBullshitRuleForm() {
 }
 
 function renderFeeds() {
+    const visibleFeeds = store.reference.feeds.filter(feed => !feed.manual);
     const fragment = document.createDocumentFragment();
-    for (const feed of store.reference.feeds) {
+    for (const feed of visibleFeeds) {
         const node = dom.settings.feedTemplate.content.cloneNode(true);
         const root = node.querySelector('.list-item'); root.dataset.feedId = String(feed.id);
         const logo = node.querySelector('.feed-logo');
@@ -41,8 +42,8 @@ function renderFeeds() {
         node.querySelector('.btn-edit').dataset.action = 'edit-feed'; node.querySelector('.btn-delete').dataset.action = 'delete-feed'; fragment.appendChild(node);
     }
     dom.settings.feedsList.replaceChildren(fragment);
-    text(dom.settings.feedsState, store.reference.feeds.length ? '' : 'No feeds yet.');
-    dom.settings.feedsState.classList.toggle('hide', store.reference.feeds.length > 0);
+    text(dom.settings.feedsState, visibleFeeds.length ? '' : 'No feeds yet.');
+    dom.settings.feedsState.classList.toggle('hide', visibleFeeds.length > 0);
 }
 
 function renderLists() {
@@ -113,7 +114,7 @@ function renderDigestSettings() {
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.dataset.feedId = String(feed.id); checkbox.checked = excluded.has(Number(feed.id));
         const wrap = document.createElement('span'); wrap.className = 'settings-digest-feed-item-text';
         const title = document.createElement('span'); title.className = 'settings-digest-feed-item-title'; title.textContent = feed.name || 'Unnamed feed';
-        const meta = document.createElement('span'); meta.className = 'settings-digest-feed-item-meta'; meta.textContent = feed.feedUrl || feed.websiteUrl || '';
+        const meta = document.createElement('span'); meta.className = 'settings-digest-feed-item-meta'; meta.textContent = feed.manual ? 'Imported links' : (feed.feedUrl || feed.websiteUrl || '');
         wrap.append(title, meta); row.append(checkbox, wrap); feeds.appendChild(row);
     }
     if (!store.reference.feeds.length) { const empty = document.createElement('div'); empty.className = 'state'; empty.textContent = 'No feeds yet.'; feeds.appendChild(empty); }

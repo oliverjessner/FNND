@@ -53,5 +53,11 @@ export const dom = Object.freeze({
         themeToggle: byId('theme-toggle'),
     }),
     modal: Object.freeze({ backdrop: byId('modal-backdrop'), select: byId('modal-list-select'), close: byId('modal-close'), cancel: byId('modal-cancel'), confirm: byId('modal-confirm'), existing: byId('modal-existing-lists') }),
+    feedImport: Object.freeze({
+        trigger: byId('feed-import-trigger'), backdrop: byId('feed-import-backdrop'), close: byId('feed-import-close'),
+        cancel: byId('feed-import-cancel'), confirm: byId('feed-import-confirm'), urls: byId('feed-import-urls'),
+        file: byId('feed-import-file'), chooseFile: byId('feed-import-choose-file'), fileName: byId('feed-import-file-name'),
+        status: byId('feed-import-status'),
+    }),
     toastRegion: byId('toast-region'),
 });

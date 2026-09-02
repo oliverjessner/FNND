@@ -5,6 +5,7 @@ import { ensureRebuildWindowDigestPeriods, generateDirtyDigestPeriods } from './
 import { logInfo, logWarn, logError } from '../utils/logger.js';
 import { publish } from './events.js';
 import { decodeBuffer, detectEncoding } from '../utils/encoding.js';
+import { MANUAL_IMPORT_FEED_PREFIX } from './article-import.js';
 
 const parser = new Parser({ timeout: 8000 });
 
@@ -44,7 +45,7 @@ async function fetchWithRetry(url, { timeoutMs = 10000, retries = 2 } = {}) {
 
 export async function updateAllFeeds() {
     const start = Date.now();
-    const feeds = await all('SELECT * FROM feeds ORDER BY id');
+    const feeds = await all('SELECT * FROM feeds WHERE feedUrl NOT LIKE ? ORDER BY id', [`${MANUAL_IMPORT_FEED_PREFIX}%`]);
     let totalNew = 0;
     let errorMessage = null;
 

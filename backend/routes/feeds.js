@@ -6,6 +6,7 @@ import { isValidUrl } from '../utils/validation.js';
 import Parser from 'rss-parser';
 import { fetchSiteLogo } from '../services/logo.js';
 import { publish } from '../services/events.js';
+import { isManualImportFeedUrl } from '../services/article-import.js';
 
 const router = express.Router();
 const feedBodySchema = {
@@ -51,7 +52,7 @@ const feedSelect = `SELECT feeds.id, feeds.sourceId, feeds.feedUrl, feeds.create
 function mapFeed(feed) {
     const logoDataUrl = feed.logo && feed.logoMime ? `/api/feeds/${encodeURIComponent(feed.id)}/logo` : null;
     const { logo, logoMime, ...rest } = feed;
-    return { ...rest, logoDataUrl };
+    return { ...rest, manual: isManualImportFeedUrl(feed.feedUrl), logoDataUrl };
 }
 
 async function upsertSource({ name, websiteUrl, logoBuffer, logoMime }) {

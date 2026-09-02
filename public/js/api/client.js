@@ -37,6 +37,7 @@ export const api = Object.freeze({
     deleteBullshitRule: id => apiFetch(`/api/bullshit-rules/${id}`, { method: 'DELETE' }),
     reevaluateBullshitRules: () => apiFetch('/api/bullshit-rules/re-evaluate', { method: 'POST' }),
     articles: (params, signal) => apiFetch(`/api/articles?${params}`, { signal }),
+    importArticles: urls => apiFetch('/api/articles/import', json('POST', { urls })),
     articleStats: () => apiFetch('/api/articles/stats'),
     dismissArticle: (id, dismissed) => apiFetch(`/api/articles/${id}/dismissed`, json('PATCH', { dismissed })),
     digest: (range, signal) => apiFetch(`/api/articles/digest?${new URLSearchParams({ variant: range })}`, { signal }),
