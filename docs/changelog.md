@@ -1,4 +1,4 @@
-## 1.1.0 Improve the datasets
+## 1.1.0
 
 - Export feed with active search criteria and export digest
 - Bullshit filter
