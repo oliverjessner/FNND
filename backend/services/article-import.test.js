@@ -13,6 +13,7 @@ const {
     deriveImportedArticleTitle,
     importArticlesFromUrls,
     isManualImportFeedUrl,
+    normalizeImportDomain,
     normalizeImportUrl,
 } = await import('./article-import.js');
 const { queryArticles } = await import('./article-queries.js');
@@ -33,6 +34,11 @@ test('normalizes only public-style HTTP(S) article URLs', () => {
     assert.equal(normalizeImportUrl('ftp://example.com/story'), null);
     assert.equal(normalizeImportUrl('not a url'), null);
     assert.equal(normalizeImportUrl('https://user:secret@example.com/story'), null);
+});
+
+test('normalizes domains for matching existing feeds', () => {
+    assert.equal(normalizeImportDomain('https://WWW.Example.com./story'), 'example.com');
+    assert.equal(normalizeImportDomain('not a url'), null);
 });
 
 test('derives a readable local title from the final URL segment', () => {
@@ -66,4 +72,75 @@ test('re-importing an existing canonical URL does not create another article', a
     assert.equal(result.imported, 0);
     assert.equal(result.duplicates, 1);
     assert.equal((await database.get('SELECT COUNT(*) AS count FROM articles')).count, 1);
+});
+
+test('assigns imports to an existing feed when the website domain matches', async () => {
+    await database.run(
+        `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        ['Publisher', 'https://publisher.test/', 'https://publisher.test/'],
+    );
+    const source = await database.get('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', ['https://publisher.test/']);
+    const created = await database.run(
+        `INSERT INTO feeds (sourceId, name, feedUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        [source.id, 'Publisher News', 'https://feeds.publisher.test/rss.xml'],
+    );
+
+    const result = await importArticlesFromUrls(['https://www.publisher.test/news/domain-match']);
+    assert.equal(result.imported, 1);
+    const article = await database.get('SELECT feedId FROM articles WHERE id = ?', [result.articleIds[0]]);
+    assert.equal(Number(article.feedId), Number(created.lastID));
+    assert.equal(
+        (await database.get('SELECT COUNT(*) AS count FROM feeds WHERE feedUrl = ?', ['nbs-import:https://www.publisher.test'])).count,
+        0,
+    );
+});
+
+test('also matches the configured RSS feed domain', async () => {
+    await database.run(
+        `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        ['Syndicated', 'https://syndicated-home.test/', 'https://syndicated-home.test/'],
+    );
+    const source = await database.get('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', ['https://syndicated-home.test/']);
+    const created = await database.run(
+        `INSERT INTO feeds (sourceId, name, feedUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        [source.id, 'Syndicated Feed', 'https://news.syndicated.test/rss'],
+    );
+
+    const result = await importArticlesFromUrls(['https://news.syndicated.test/article/feed-domain-match']);
+    assert.equal(result.imported, 1);
+    const article = await database.get('SELECT feedId FROM articles WHERE id = ?', [result.articleIds[0]]);
+    assert.equal(Number(article.feedId), Number(created.lastID));
+});
+
+test('prefers a website-domain match over another feeds shared RSS host', async () => {
+    await database.run(
+        `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        ['Shared host user', 'https://shared-host-user.test/', 'https://shared-host-user.test/'],
+    );
+    const firstSource = await database.get('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', ['https://shared-host-user.test/']);
+    await database.run(
+        `INSERT INTO feeds (sourceId, name, feedUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        [firstSource.id, 'Shared RSS host user', 'https://publisher-priority.test/rss/other'],
+    );
+    await database.run(
+        `INSERT INTO sources (name, websiteUrl, canonicalWebsiteUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        ['Priority Publisher', 'https://publisher-priority.test/', 'https://publisher-priority.test/'],
+    );
+    const prioritySource = await database.get('SELECT id FROM sources WHERE canonicalWebsiteUrl = ?', ['https://publisher-priority.test/']);
+    const priorityFeed = await database.run(
+        `INSERT INTO feeds (sourceId, name, feedUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+        [prioritySource.id, 'Priority Publisher', 'https://rss-host.test/priority'],
+    );
+
+    const result = await importArticlesFromUrls(['https://publisher-priority.test/article/website-wins']);
+    const article = await database.get('SELECT feedId FROM articles WHERE id = ?', [result.articleIds[0]]);
+    assert.equal(Number(article.feedId), Number(priorityFeed.lastID));
 });

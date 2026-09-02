@@ -20,7 +20,7 @@ export const dom = Object.freeze({
         rangeOptions: document.querySelectorAll('#digest-range-toggle .digest-range-option'),
         sort: byId('digest-sort-toggle'), sortOptions: document.querySelectorAll('#digest-sort-toggle .digest-sort-option'),
         markAll: byId('digest-mark-all'), bulkMenu: byId('digest-bulk-menu'), header: document.querySelector('.digest-header'),
-        exportMenu: byId('digest-export-menu'), exportTrigger: byId('digest-export-trigger'), exportPopover: byId('digest-export-popover'),
+        exportMenu: byId('digest-bulk-menu'), exportTrigger: byId('digest-export-trigger'), exportPopover: byId('digest-export-popover'),
     }),
     viewer: Object.freeze({
         feed: Object.freeze({ layout: byId('dashboard-layout'), panel: byId('article-viewer'), title: byId('article-viewer-title'), message: byId('article-viewer-message'), frame: byId('article-viewer-frame'), hide: byId('article-viewer-hide') }),

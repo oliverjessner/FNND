@@ -1,4 +1,4 @@
-import { get, run } from '../database/datenbank.js';
+import { all, get, run } from '../database/datenbank.js';
 import { canonicalizeArticleUrl } from '../routes/digest.js';
 import { ingestArticle } from './article-ingest.js';
 
@@ -16,6 +16,14 @@ export function normalizeImportUrl(value) {
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
         url.hash = '';
         return url.toString();
+    } catch {
+        return null;
+    }
+}
+
+export function normalizeImportDomain(value) {
+    try {
+        return new URL(value).hostname.toLowerCase().replace(/\.$/u, '').replace(/^www\./u, '');
     } catch {
         return null;
     }
@@ -56,10 +64,32 @@ async function ensureImportFeed(articleUrl) {
     return get('SELECT id FROM feeds WHERE feedUrl = ?', [feedUrl]);
 }
 
+async function loadImportFeedIndex() {
+    const feeds = await all(
+        `SELECT feeds.id, feeds.feedUrl, sources.websiteUrl
+         FROM feeds
+         JOIN sources ON sources.id = feeds.sourceId
+         WHERE feeds.feedUrl NOT LIKE ?
+         ORDER BY feeds.id ASC`,
+        [`${MANUAL_IMPORT_FEED_PREFIX}%`],
+    );
+    const index = new Map();
+    for (const feed of feeds) {
+        const domain = normalizeImportDomain(feed.websiteUrl);
+        if (domain && !index.has(domain)) index.set(domain, { id: Number(feed.id) });
+    }
+    for (const feed of feeds) {
+        const domain = normalizeImportDomain(feed.feedUrl);
+        if (domain && !index.has(domain)) index.set(domain, { id: Number(feed.id) });
+    }
+    return index;
+}
+
 export async function importArticlesFromUrls(values) {
     const inputs = Array.isArray(values) ? values : [];
     const result = { received: inputs.length, imported: 0, duplicates: 0, invalid: 0, failed: 0, articleIds: [], issues: [] };
     const seen = new Set();
+    const feedByDomain = await loadImportFeedIndex();
 
     for (let index = 0; index < inputs.length; index += 1) {
         const url = normalizeImportUrl(inputs[index]);
@@ -83,7 +113,12 @@ export async function importArticlesFromUrls(values) {
         }
 
         try {
-            const feed = await ensureImportFeed(url);
+            const domain = normalizeImportDomain(url);
+            let feed = feedByDomain.get(domain);
+            if (!feed) {
+                feed = await ensureImportFeed(url);
+                if (domain) feedByDomain.set(domain, feed);
+            }
             const imported = await ingestArticle({
                 feedId: Number(feed.id),
                 externalId: canonicalUrl,

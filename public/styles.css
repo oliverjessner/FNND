@@ -851,6 +851,12 @@ input::placeholder {
     font-weight: var(--font-weight-semibold);
 }
 
+.action-menu-divider {
+    block-size: var(--border-width-default);
+    margin: var(--space-6) var(--space-4) var(--space-2);
+    background: var(--color-border-subtle);
+}
+
 .export-trigger:focus-visible {
     outline: none;
     border-color: var(--color-text-accent);
@@ -1756,6 +1762,11 @@ input::placeholder {
     min-block-size: 0;
     padding-block: var(--space-8);
     font-size: 0.833333rem;
+}
+
+.bulk-actions-trigger[aria-disabled='true'] {
+    pointer-events: none;
+    opacity: 0.55;
 }
 
 .bulk-actions-trigger::-webkit-details-marker {

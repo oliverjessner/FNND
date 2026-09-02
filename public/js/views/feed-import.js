@@ -30,7 +30,9 @@ function close({ reset = true } = {}) {
 }
 
 function open() {
-    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const actionMenu = dom.feedImport.trigger.closest('details');
+    previousFocus = actionMenu?.querySelector('summary') || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    actionMenu?.removeAttribute('open');
     dom.feedImport.backdrop.classList.add('is-open');
     dom.feedImport.backdrop.setAttribute('aria-hidden', 'false');
     dom.feedImport.urls.focus({ preventScroll: true });
