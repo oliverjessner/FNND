@@ -4,10 +4,12 @@ import { CONFIG, STORAGE_KEYS } from '../config.js';
 import { closeViewer, isViewerOpen, openArticle, openExternal } from '../services/article-viewer.js';
 import { store } from '../state/store.js';
 import { dom } from '../ui/dom.js';
+import { bindExportMenu } from '../ui/export-menu.js';
 import { openListModal } from '../ui/modal.js';
 import { toast } from '../ui/toast.js';
 import { isAbortError, normalizeIds } from '../utils/data.js';
 import { clear, hide, setPressed, show, text } from '../utils/dom.js';
+import { createDigestExport, downloadExport } from '../utils/export.js';
 import { applySourceFilter, applyTopicFilter } from './feed.js';
 
 let initialized = false;
@@ -133,7 +135,29 @@ async function markDigested(ids, button, { removeCluster = false } = {}) {
     }
 }
 
+async function exportDigest(format) {
+    try {
+        if (!store.digest.payload || store.digest.payload.variant !== store.ui.digestRange) {
+            await loadDigest({ force: true });
+        }
+        const payload = store.digest.payload;
+        if (!payload || payload.variant !== store.ui.digestRange) throw new Error('The selected digest is not available.');
+        const clusters = sortedClusters(payload);
+        const artifact = createDigestExport(format, { variant: payload.variant, clusters });
+        downloadExport(artifact);
+        toast.success(`Exported ${clusters.length.toLocaleString('en-US')} ${clusters.length === 1 ? 'story' : 'stories'}.`);
+    } catch (error) {
+        toast.error(`Export failed: ${error.message}`);
+    }
+}
+
 function bindEvents() {
+    bindExportMenu({
+        root: dom.digest.exportMenu,
+        trigger: dom.digest.exportTrigger,
+        popover: dom.digest.exportPopover,
+        onSelect: exportDigest,
+    });
     dom.digest.range.addEventListener('click', async event => {
         const option = event.target.closest('[data-digest-range]'); if (!option || option.dataset.digestRange === store.ui.digestRange) return;
         store.ui.digestRange = option.dataset.digestRange; localStorage.setItem(STORAGE_KEYS.digestRange, store.ui.digestRange); updateControls(); store.digest.needsRefresh = true; await loadDigest({ force: true });

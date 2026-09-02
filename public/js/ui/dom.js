@@ -11,7 +11,8 @@ export const dom = Object.freeze({
         layoutOptions: document.querySelectorAll('#toggle-layout .view-toggle-option'), loading: byId('loading-row'),
         state: byId('articles-state'), list: byId('articles-list'), loadMore: byId('articles-load-more'),
         scroll: document.querySelector('.articles-scroll'), backToTop: byId('feed-back-to-top'),
-        dashboard: byId('dashboard-layout'), template: byId('article-card-template'),
+        dashboard: byId('dashboard-layout'), template: byId('article-card-template'), exportMenu: byId('feed-export-menu'),
+        exportTrigger: byId('feed-export-trigger'), exportPopover: byId('feed-export-popover'),
     }),
     digest: Object.freeze({
         state: byId('digest-state'), list: byId('digest-list'), subtitle: byId('digest-subtitle'),
@@ -19,6 +20,7 @@ export const dom = Object.freeze({
         rangeOptions: document.querySelectorAll('#digest-range-toggle .digest-range-option'),
         sort: byId('digest-sort-toggle'), sortOptions: document.querySelectorAll('#digest-sort-toggle .digest-sort-option'),
         markAll: byId('digest-mark-all'), bulkMenu: byId('digest-bulk-menu'), header: document.querySelector('.digest-header'),
+        exportMenu: byId('digest-export-menu'), exportTrigger: byId('digest-export-trigger'), exportPopover: byId('digest-export-popover'),
     }),
     viewer: Object.freeze({
         feed: Object.freeze({ layout: byId('dashboard-layout'), panel: byId('article-viewer'), title: byId('article-viewer-title'), message: byId('article-viewer-message'), frame: byId('article-viewer-frame'), hide: byId('article-viewer-hide') }),

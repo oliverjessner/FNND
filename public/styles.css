@@ -784,6 +784,64 @@ input::placeholder {
     font-size: var(--font-size-sm);
 }
 
+.feed-heading-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-14);
+}
+
+.export-menu {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.export-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-8);
+    min-block-size: 2.25rem;
+    padding: var(--space-8) var(--space-14);
+    white-space: nowrap;
+}
+
+.export-icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+}
+
+.export-popover {
+    min-inline-size: 10.5rem;
+}
+
+.export-popover[hidden] {
+    display: none;
+}
+
+.export-popover-title {
+    margin: 0;
+    padding: var(--space-8) var(--space-10) var(--space-4);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+}
+
+.export-trigger:focus-visible {
+    outline: none;
+    border-color: var(--color-text-accent);
+    box-shadow: 0 0 0 var(--space-2) var(--color-bg-page), 0 0 0 var(--space-4) var(--color-text-accent);
+}
+
+.export-trigger:disabled, .export-popover button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .toolbar-actions > * {
     flex-shrink: 0;
     min-inline-size: 0;
@@ -1713,6 +1771,12 @@ input::placeholder {
     background: var(--color-bg-surface-soft);
 }
 
+.bulk-actions-popover button:focus-visible {
+    outline: none;
+    background: var(--color-bg-surface-soft);
+    box-shadow: inset 0 0 0 var(--border-width-default) var(--color-text-accent);
+}
+
 :is(.article-title-button, .view-toggle-option, .active-filter-chip, .clear-filters, .bulk-actions-trigger, .bulk-actions-popover button, .toast button):focus-visible {
     outline: 2px solid var(--color-text-accent);
     outline-offset: 2px;
@@ -2628,6 +2692,12 @@ from {
 
     .feed-heading {
         align-items: flex-start;
+    }
+
+    .feed-heading-meta {
+        align-items: flex-end;
+        flex-direction: column;
+        gap: var(--space-8);
     }
 
     .toolbar-actions .view-toggle {

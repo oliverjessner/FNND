@@ -1,3 +1,7 @@
+## 1.0.3
+
+- Export feed with active search criteria and export digest
+
 ## 1.0.2
 
 - search in cli `no-bullshit-rss articles search 10 --title "nvidia"`

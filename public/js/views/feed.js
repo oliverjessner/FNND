@@ -7,8 +7,10 @@ import { dom } from '../ui/dom.js';
 import { openListModal } from '../ui/modal.js';
 import { navigate } from '../ui/navigation.js';
 import { toast } from '../ui/toast.js';
+import { bindExportMenu } from '../ui/export-menu.js';
 import { debounce, fingerprintArticles, isAbortError, normalizeSearch } from '../utils/data.js';
 import { clear, hide, option, show, text } from '../utils/dom.js';
+import { createFeedExport, downloadExport, fetchAllFeedArticles } from '../utils/export.js';
 
 let initialized = false;
 let observer = null;
@@ -20,6 +22,36 @@ function requestKey() {
         topic: dom.feed.topicFilter.value,
         query: normalizeSearch(dom.feed.search.value, CONFIG.MAX_SEARCH_QUERY_LENGTH),
     }).toString();
+}
+
+function exportSnapshot() {
+    const params = new URLSearchParams(requestKey());
+    for (const [name, value] of [...params]) if (!value) params.delete(name);
+    const topic = dom.feed.topicFilter.value ? filterLabel(dom.feed.topicFilter, 'Topic') : null;
+    const source = dom.feed.sourceFilter.value ? filterLabel(dom.feed.sourceFilter, 'Source') : null;
+    const list = dom.feed.listFilter.value ? filterLabel(dom.feed.listFilter, 'List') : null;
+    return {
+        params,
+        filters: {
+            query: params.get('query'),
+            topic,
+            source,
+            listId: params.get('listId'),
+        },
+        filterLabels: { topic, source, list },
+    };
+}
+
+async function exportFeed(format) {
+    const snapshot = exportSnapshot();
+    try {
+        const articles = await fetchAllFeedArticles(params => api.articles(params.toString()), snapshot.params);
+        const artifact = createFeedExport(format, { articles, filters: snapshot.filters, filterLabels: snapshot.filterLabels });
+        downloadExport(artifact);
+        toast.success(`Exported ${articles.length.toLocaleString('en-US')} ${articles.length === 1 ? 'article' : 'articles'}.`);
+    } catch (error) {
+        toast.error(`Export failed: ${error.message}`);
+    }
 }
 
 function renderFilterSelect(select, defaultLabel, values, label, value) {
@@ -189,6 +221,12 @@ async function clearFilters() {
 }
 
 function bindEvents() {
+    bindExportMenu({
+        root: dom.feed.exportMenu,
+        trigger: dom.feed.exportTrigger,
+        popover: dom.feed.exportPopover,
+        onSelect: exportFeed,
+    });
     const search = debounce(() => void loadArticles({ showLoading: false, force: true }), CONFIG.SEARCH_DEBOUNCE_MS);
     dom.feed.search.addEventListener('input', () => { renderFilterChips(); search(); });
     [dom.feed.topicFilter, dom.feed.sourceFilter, dom.feed.listFilter].forEach(select => select.addEventListener('change', () => void loadArticles({ force: true })));
